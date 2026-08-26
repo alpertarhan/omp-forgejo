@@ -22,6 +22,7 @@ It also gives Pi a single, safety-oriented interface for:
 - A compact TUI attention queue across all configured servers
 - Session-scoped incremental timeline updates that avoid rereading an entire discussion
 - Session-scoped one-shot issue and pull-request watches that wake Pi on matching timeline metadata
+- CI watches that wake Pi when a pull request's Actions runs finish, and cross-server attention watches for new review requests and notifications
 - Cross-server search that never drops the source server identity
 
 ## Installation
@@ -59,6 +60,7 @@ pi update npm:pi-forgejo-toolkit
 ## Requirements and compatibility
 
 - A current Pi installation
+- Pi 0.84.2 or newer, so `attention=context` watch messages record context without steering the active run
 - One or more reachable Forgejo instances
 - Either an authenticated `fgj` profile or one token environment variable per server
 - Forgejo API permissions appropriate for the operations you want to use
@@ -257,9 +259,13 @@ By default, only `forgejo_context` and the compact `forgejo_tools` loader are ac
 | `forgejo_pull` | `list`, `get`, `timeline`, `updates`, `comment`, `get_comment`, `edit_comment`, `delete_comment`, `subscription`, `subscribe`, `unsubscribe`, `files`, `diff`, `commits`, `checks`, `create`, `update`, `set_labels`, `set_assignees`, `set_milestone`, `clear_milestone`, `set_due_date`, `clear_due_date`, `set_maintainer_edit`, `close`, `reopen`, `mark_draft`, `mark_ready`, `request_reviewers`, `remove_reviewers`, `readiness`, `merge` |
 | `forgejo_review` | `list`, `get`, `get_comments`, `create_draft`, `add_inline_comment`, `preview`, `submit`, `discard` |
 | `forgejo_actions` | `list`, `get`, `jobs`, `job_log`, `dispatch`, `cancel`, `rerun`, `artifacts`, `artifact`, `download_artifact` |
-| `forgejo_watch` | `start`, `list`, `stop` for one-shot issue/PR timeline watches |
+| `forgejo_watch` | `start`, `list`, `stop` for one-shot timeline, CI, and attention watches |
 
-`forgejo_watch` starts only after its `watch` domain is loaded. Watches are in-memory and scoped to the current Pi session: unloading the lazy tool does not stop active watches, while session shutdown, replacement, reload, or a new session closes them. A match, timeout, or permanent failure completes a watch once. `attention=turn` steers or starts an agent turn; `attention=context` adds context without starting one. `include_self=false` filters timeline events by actor and merge transitions by `merged_by`; Forgejo's issue/PR state response does not identify who closed or reopened a resource, so those two transition filters cannot distinguish self-authored changes. The `closed` filter matches non-merge closes only; use `merged` (or `feedback` for review activity) to observe merges. An idle watch gets one final poll when its timeout expires, so a match that lands on the deadline is reported instead of a timeout. Wake messages contain only bounded toolkit-generated metadata and an exact `forgejo_issue`/`forgejo_pull action=updates` follow-up hint; remote titles, bodies, diffs, and raw errors are excluded. Timeline cursor state stores fixed-size event fingerprints rather than remote bodies or titles.
+`forgejo_watch` starts only after its `watch` domain is loaded. Watches are in-memory and scoped to the current Pi session: unloading the lazy tool does not stop active watches, while session shutdown, replacement, reload, or a new session closes them. A match, timeout, or permanent failure completes a watch once. `attention=turn` steers or starts an agent turn; `attention=context` adds context without starting one. `include_self=false` filters timeline events by actor and merge transitions by `merged_by`; Forgejo's issue/PR state response does not identify who closed or reopened a resource, so those two transition filters cannot distinguish self-authored changes. The `closed` filter matches non-merge closes only; use `merged` (or `feedback` for review activity) to observe merges. An idle watch gets one final poll when its timeout expires, so a match that lands on the deadline is reported instead of a timeout.
+
+Besides per-ref timeline watches, `forgejo_watch` starts two source watches. `events=["ci"]` on a pull-request ref polls the pull's current head SHA and wakes once any Actions run that was in flight or started after arming finishes (`ci-success`, `ci-failure`, `ci-cancelled`, `ci-skipped`), following new pushes to a fresh head SHA; runs that were already terminal when the watch armed are treated as baseline and never re-reported. `target=review_requests` or `target=notifications` watches the authenticated user's incoming review requests or unread notifications across every configured server (or a `servers` subset via the tool), seeding a silent baseline and waking on new items — the wake the TUI dashboard gives a human, delivered to the agent instead.
+
+Wake messages contain only bounded toolkit-generated metadata: an exact follow-up hint (`forgejo_pull action=updates`, `forgejo_actions action=jobs`, or `forgejo_pull action=get`), a re-arm hint for continuing a completed watch, item URLs where the toolkit generates them, and for attention items a sanitized 120-character title — remote bodies, diffs, run titles, and raw errors are always excluded. Timeline cursor state stores fixed-size event fingerprints rather than remote bodies or titles.
 
 Model-visible metadata and discussion output defaults to 32 KB. Pull-request diffs and Actions job logs default to 64 KB. `max_bytes` can lower either budget but is hard-capped at 128 KB; truncated timeline results retain pagination and recovery metadata. Cross-server search includes a bounded, single-line body preview; use the qualified result with `forgejo_issue` or `forgejo_pull` when the complete body is needed. Oversized hidden tool details are compacted before Pi persists them, retaining small identifiers and recovery fields rather than duplicating full remote payloads in session history. Artifact downloads use the separate `max_download_bytes` limit and write ZIP bytes to a deliberate workspace path instead of returning the archive to the model.
 

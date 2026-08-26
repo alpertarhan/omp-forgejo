@@ -16,6 +16,7 @@ import {
 	resourceWebUrl,
 } from "./refs.js";
 import { createRuntime, type ForgejoRuntime } from "./runtime.js";
+import { SourceWatchManager } from "./source-watch.js";
 import { registerForgejoTools } from "./tools/index.js";
 import type { DashboardItem, DashboardScope, RepoResolution } from "./types.js";
 import { WatchManager } from "./watch.js";
@@ -83,6 +84,7 @@ async function openExternal(
 export default function forgejoExtension(pi: ExtensionAPI): void {
 	let runtime: ForgejoRuntime | undefined;
 	let watchManager: WatchManager | undefined;
+	let sourceWatchManager: SourceWatchManager | undefined;
 	let startupError: Error | undefined;
 	let refreshTimer: NodeJS.Timeout | undefined;
 	let notifier: DashboardNotifier | undefined;
@@ -105,6 +107,8 @@ export default function forgejoExtension(pi: ExtensionAPI): void {
 	const cleanup = (): void => {
 		watchManager?.close();
 		watchManager = undefined;
+		sourceWatchManager?.close();
+		sourceWatchManager = undefined;
 		stopRefreshTimer();
 		notifier?.close();
 		notifier = undefined;
@@ -251,6 +255,12 @@ export default function forgejoExtension(pi: ExtensionAPI): void {
 		if (!watchManager)
 			throw new Error("Forgejo watch manager is unavailable before session start");
 		return watchManager;
+	}, () => {
+		if (!sourceWatchManager)
+			throw new Error(
+				"Forgejo source watch manager is unavailable before session start",
+			);
+		return sourceWatchManager;
 	});
 
 	pi.registerCommand("fj-context", {
@@ -449,6 +459,15 @@ export default function forgejoExtension(pi: ExtensionAPI): void {
 			},
 		);
 		watchManager = currentManager;
+		const currentSourceManager = new SourceWatchManager(
+			(server) => requireRuntime().client(server),
+			() => runtime?.clients.aliases() ?? [],
+			(emission) => {
+				if (sourceWatchManager === currentSourceManager)
+					sendWatchNotification(pi, emission);
+			},
+		);
+		sourceWatchManager = currentSourceManager;
 		const forgejoProject = runtime.repoResolution.status !== "none";
 		widgetScope = runtime.config.dashboard.scope;
 		widgetVisible = dashboardStartsAutomatically(

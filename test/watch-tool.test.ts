@@ -5,9 +5,15 @@ import type {
 import { describe, expect, it, vi } from "vitest";
 import {
 	formatWatchNotification,
+	formatSourceWatchNotification,
 	sendWatchNotification,
 } from "../src/watch-notification.js";
 import type { ForgejoRuntime } from "../src/runtime.js";
+import type {
+	SourceWatch,
+	SourceWatchEmission,
+	SourceWatchManager,
+} from "../src/source-watch.js";
 import { registerWatchTool } from "../src/tools/watch.js";
 import type { EventWatch, WatchEmission, WatchManager } from "../src/watch.js";
 
@@ -67,6 +73,14 @@ function fixture(initial = [watch()]) {
 			return true;
 		}),
 	} as unknown as WatchManager;
+	const sourceManagerMocks = {
+		arm: vi.fn((): Promise<SourceWatch> => {
+			throw new Error("unexpected source watch arm");
+		}),
+		list: vi.fn((): SourceWatch[] => []),
+		stop: vi.fn(() => false),
+	};
+	const sourceManager = sourceManagerMocks as unknown as SourceWatchManager;
 	const runtime = {
 		resolveResource: vi.fn(() => ref),
 	} as unknown as ForgejoRuntime;
@@ -80,9 +94,10 @@ function fixture(initial = [watch()]) {
 		pi,
 		() => runtime,
 		() => manager,
+		() => sourceManager,
 	);
 	if (!tool) throw new Error("watch tool was not registered");
-	return { tool, manager, runtime };
+	return { tool, manager, sourceManager: sourceManagerMocks, runtime };
 }
 
 function data(
@@ -237,6 +252,130 @@ describe("forgejo_watch tool", () => {
 		).rejects.toThrow("not valid for list");
 	});
 
+	it("routes attention targets to the source watch manager", async () => {
+		const f = fixture([]);
+		f.sourceManager.arm.mockResolvedValue({
+			id: "srcwatch-1",
+			source: "attention",
+			reference: "review requests on work",
+			target: "review_requests",
+			attention: "turn",
+			state: "active",
+			createdAt: "2026-08-12T10:00:00.000Z",
+			pollIntervalMs: 60_000,
+			failures: 0,
+		} as SourceWatch);
+
+		const started = await f.tool.execute(
+			"target",
+			{ action: "start", target: "review_requests" },
+			signal,
+			undefined,
+			context,
+		);
+		expect(f.sourceManager.arm).toHaveBeenCalledWith(
+			expect.objectContaining({ target: "review_requests" }),
+		);
+		expect(data(started)).toMatchObject({
+			outcome: "created",
+			watch: { id: "srcwatch-1" },
+		});
+
+		await expect(
+			f.tool.execute(
+				"target-ref",
+				{ action: "start", target: "review_requests", ref: "work:acme/app!9" },
+				signal,
+				undefined,
+				context,
+			),
+		).rejects.toThrow("not valid for target start");
+	});
+
+	it("routes ci watches and rejects mixing ci with timeline events", async () => {
+		const f = fixture([]);
+		f.sourceManager.arm.mockResolvedValue({
+			id: "srcwatch-2",
+			source: "ci",
+			reference: "work:acme/app!9",
+			attention: "turn",
+			state: "active",
+			createdAt: "2026-08-12T10:00:00.000Z",
+			pollIntervalMs: 60_000,
+			failures: 0,
+		} as SourceWatch);
+
+		const started = await f.tool.execute(
+			"ci",
+			{ action: "start", ref: "work:acme/app!9", events: ["ci"] },
+			signal,
+			undefined,
+			context,
+		);
+		expect(f.sourceManager.arm).toHaveBeenCalledWith(
+			expect.objectContaining({ ref }),
+		);
+		expect(data(started)).toMatchObject({ outcome: "created" });
+
+		await expect(
+			f.tool.execute(
+				"mix",
+				{ action: "start", ref: "work:acme/app!9", events: ["ci", "comment"] },
+				signal,
+				undefined,
+				context,
+			),
+		).rejects.toThrow("cannot be combined");
+		await expect(
+			f.tool.execute(
+				"issue-ci",
+				{ action: "start", ref: "work:acme/app#9", events: ["ci"] },
+				signal,
+				undefined,
+				context,
+			),
+		).rejects.toThrow("only valid for pull-request watches");
+	});
+
+	it("merges timeline and source watches in list and stop", async () => {
+		const f = fixture([watch()]);
+		f.sourceManager.list.mockReturnValue([
+			{
+				id: "srcwatch-1",
+				source: "attention",
+				reference: "review requests on work",
+				attention: "turn",
+				state: "active",
+				createdAt: "2026-08-12T10:00:00.000Z",
+				pollIntervalMs: 60_000,
+				failures: 0,
+			},
+		]);
+		const listed = await f.tool.execute(
+			"list",
+			{ action: "list" },
+			signal,
+			undefined,
+			context,
+		);
+		const parsed = JSON.parse(listed.content[0]?.text ?? "");
+		expect(parsed.watches).toHaveLength(2);
+		expect(parsed.watches.map((item: { id: string }) => item.id)).toEqual([
+			"watch-1",
+			"srcwatch-1",
+		]);
+
+		f.sourceManager.stop.mockReturnValue(true);
+		const stopped = await f.tool.execute(
+			"stop-src",
+			{ action: "stop", id: "srcwatch-1" },
+			signal,
+			undefined,
+			context,
+		);
+		expect(data(stopped)).toMatchObject({ id: "srcwatch-1", stopped: true });
+	});
+
 	it("requires a runtime and manager and validates start arguments", async () => {
 		const f = fixture([]);
 		await expect(
@@ -326,10 +465,84 @@ describe("watch wake messages", () => {
 		expect(message.content).toContain(
 			"Fetch updates: forgejo_pull action=updates ref=fj://work/acme/app/pulls/9 since=2026-08-12T10:00:00.000Z",
 		);
+		expect(message.content).toContain(
+			"Continue watching: forgejo_watch action=start ref=fj://work/acme/app/pulls/9 events=comment attention=turn",
+		);
 		expect(message.content).not.toMatch(
 			/REMOTE BODY|REMOTE ERROR|attacker TITLE/,
 		);
 		expect(message.details.events as unknown[]).toHaveLength(20);
+	});
+
+	it("formats source watch CI matches with follow-up and re-arm hints", () => {
+		const message = formatSourceWatchNotification({
+			watchId: "srcwatch-1",
+			source: "ci",
+			reference: "work:acme/app!9",
+			attention: "turn",
+			kind: "matched",
+			events: [
+				{
+					type: "ci-failure",
+					reference: "work:acme/app!9",
+					runId: 42,
+					workflow: "ci.yml",
+					status: "failure",
+					title: "REMOTE RUN\nTITLE",
+					url: "https://work.example/acme/app/actions/runs/42",
+				},
+			],
+			totalCount: 1,
+		});
+		expect(message.content).toContain("Watching: CI on work:acme/app!9");
+		expect(message.content).toContain(
+			"type=ci-failure ref=work:acme/app!9 runId=42 workflow=ci.yml status=failure",
+		);
+		expect(message.content).toContain(
+			"Inspect: forgejo_actions action=jobs ref=work:acme/app!9 run_id=42",
+		);
+		expect(message.content).toContain(
+			"Continue watching: forgejo_watch action=start ref=work:acme/app!9 events=ci attention=turn",
+		);
+		expect(message.content).toContain(
+			"https://work.example/acme/app/actions/runs/42",
+		);
+		expect(message.content).not.toContain("REMOTE RUN");
+	});
+
+	it("formats attention matches and steers via sendMessage", () => {
+		const sendMessage = vi.fn();
+		const pi = { sendMessage } as unknown as ExtensionAPI;
+		const emission: SourceWatchEmission = {
+			watchId: "srcwatch-2",
+			source: "attention",
+			reference: "review requests on work",
+			target: "review_requests",
+			attention: "turn",
+			kind: "matched",
+			events: [
+				{
+					type: "review-request",
+					reference: "work:acme/app!30",
+					title: "Review\u0000 me",
+					url: "https://work.example/acme/app/pulls/30",
+				},
+			],
+			totalCount: 1,
+		};
+		sendWatchNotification(pi, emission);
+		expect(sendMessage).toHaveBeenCalledWith(
+			expect.objectContaining({ customType: "forgejo-watch", display: true }),
+			{ triggerTurn: true, deliverAs: "steer" },
+		);
+		const sent = sendMessage.mock.calls[0]?.[0] as { content: string };
+		expect(sent.content).toContain(
+			"Review: forgejo_pull action=get ref=work:acme/app!30",
+		);
+		expect(sent.content).toContain("title=Review me");
+		expect(sent.content).toContain(
+			"Continue watching: forgejo_watch action=start target=review_requests attention=turn",
+		);
 	});
 
 	it("uses steer/turn for attention and no trigger for context", () => {

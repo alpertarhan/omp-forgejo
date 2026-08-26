@@ -2,6 +2,7 @@ import {
 	EnvironmentCredentialProvider,
 	type CredentialProvider,
 } from "./credentials.js";
+import { readFileSync } from "node:fs";
 import type {
   ApiResult,
   ForgejoCapabilities,
@@ -18,7 +19,18 @@ export type QueryValue =
 	| undefined;
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
-export const USER_AGENT = "pi-forgejo-toolkit/0.5.2";
+const PACKAGE_VERSION = (() => {
+	try {
+		return (
+			JSON.parse(
+				readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+			) as { version?: string }
+		).version;
+	} catch {
+		return undefined;
+	}
+})();
+export const USER_AGENT = `pi-forgejo-toolkit/${PACKAGE_VERSION ?? "dev"}`;
 
 export function paginationComplete<T>(
 	response: ApiResult<readonly T[]>,
