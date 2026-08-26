@@ -496,6 +496,7 @@ export interface DashboardSnapshot {
   fetchedAt?: string;
   backgroundError?: string;
   activeRepo?: RepoRef;
+  scope?: DashboardScope;
   servers: Record<ServerAlias, ServerDashboard>;
   totals: DashboardTotals;
   attention: DashboardItem[];

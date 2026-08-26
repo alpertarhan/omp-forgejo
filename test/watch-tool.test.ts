@@ -219,6 +219,15 @@ describe("forgejo_watch tool", () => {
 		).rejects.toThrow("exactly one");
 		await expect(
 			active.tool.execute(
+				"all-false",
+				{ action: "stop", id: "watch-1", all: false },
+				signal,
+				undefined,
+				context,
+			),
+		).rejects.toThrow("all must be true");
+		await expect(
+			active.tool.execute(
 				"list-fields",
 				{ action: "list", ref: "work:acme/app!9" },
 				signal,

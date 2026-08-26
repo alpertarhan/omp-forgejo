@@ -149,6 +149,7 @@ export class DashboardStore {
 			totals: totals(servers),
 			attention: [],
 			refreshing: false,
+			scope: this.scope,
 		};
 		if (activeRepo) this.snapshotValue.activeRepo = activeRepo;
 	}
@@ -195,7 +196,7 @@ export class DashboardStore {
 		this.controller?.abort();
 		this.generation += 1;
 		this.resetServersForScope();
-		this.snapshotValue = { ...this.snapshotValue, refreshing: false };
+		this.snapshotValue = { ...this.snapshotValue, scope, refreshing: false };
 		this.invalidationVersion += 1;
 		this.recalculate();
 	}

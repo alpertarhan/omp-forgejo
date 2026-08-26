@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { ForgejoClient } from "./client.js";
+import { hasNextPage, type ForgejoClient } from "./client.js";
 import type { ForgejoTimelineEvent } from "./types.js";
 
 const CURSOR_OVERLAP_MS = 5_000;
@@ -28,14 +28,6 @@ export function responseTimestamp(headers: Headers): string | undefined {
 	const date = headers.get("date");
 	if (date === null || !Number.isFinite(Date.parse(date))) return undefined;
 	return new Date(date).toISOString();
-}
-
-function hasNextPage(headers: Headers): boolean {
-	const link = headers.get("link");
-	return (
-		link !== null &&
-		/(?:^|,)\s*<[^>]+>\s*;\s*rel="?next"?(?:\s*;|\s*(?:,|$))/i.test(link)
-	);
 }
 
 export function normalizedTimestamp(value: string, name: string): string {

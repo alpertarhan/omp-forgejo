@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `forgejo_watch` no longer reports a merged pull request as `closed`: resource-level close detection now excludes merges, matching the timeline `closed` filter semantics.
+- Dashboard notifications no longer re-announce previously seen review requests, failed runs, or notifications after a server error recovers or the dashboard scope changes; degraded servers keep their known items until they refresh successfully.
+- An idle watch that reaches its timeout now gets one final poll, so a match landing exactly on the deadline is reported as a match instead of a timeout.
+- An incomplete timeline poll scan now backs off and retries instead of permanently failing the watch.
+
+### Changed
+
+- `forgejo_watch action=stop` with an explicit `all=false` now fails with a clear message instead of the generic "exactly one of id or all=true" error.
+- `any`-filtered watches no longer fetch the pull/issue resource on every poll; the extra request could never produce a match.
+- Terminal watches release their timeline fingerprint cursors immediately, keeping history summaries lightweight.
+- Link-header pagination parsing is shared between the client and the timeline scanner, removing a stricter/looser duplicate regex pair.
+
 ## [0.5.2] - 2026-08-21
 
 ### Fixed
