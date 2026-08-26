@@ -38,6 +38,27 @@ PI_FORGEJO_CONFIG=/path/to/forgejo.json \
 
 Use only test accounts and repositories for mutation smoke tests.
 
+### Integration smoke test against real Forgejo
+
+CI runs `scripts/smoke.ts` against a disposable Forgejo 16 container. To run it locally:
+
+```bash
+docker run -d --name forgejo-smoke -p 23000:3000 \
+  -e FORGEJO__security__INSTALL_LOCK=true \
+  codeberg.org/forgejo/forgejo:16
+for i in $(seq 1 60); do
+  curl -sf http://127.0.0.1:23000/api/v1/version >/dev/null && break; sleep 2
+done
+docker exec -u 1000:1000 forgejo-smoke forgejo admin user create \
+  --admin --username smoke --password smoke-pass-123 \
+  --email smoke@example.com --must-change-password=false
+TOKEN=$(docker exec -u 1000:1000 forgejo-smoke forgejo admin user generate-access-token \
+  --username smoke --token-name local --scopes all | sed 's/^.*: //')
+SMOKE_FORGEJO_URL=http://127.0.0.1:23000 SMOKE_FORGEJO_TOKEN=$TOKEN \
+  bun run scripts/smoke.ts
+docker rm -f forgejo-smoke
+```
+
 ## Project conventions
 
 - TypeScript is strict; preserve `exactOptionalPropertyTypes` and `noUncheckedIndexedAccess` correctness.

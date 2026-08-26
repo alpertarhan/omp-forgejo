@@ -10,7 +10,11 @@ import { registerNotificationTool } from "./notifications.js";
 import { registerPullTool } from "./pull.js";
 import { registerReviewTool } from "./review.js";
 import { registerSearchTool } from "./search.js";
-import { registerWatchTool, type WatchManagerProvider } from "./watch.js";
+import {
+	registerWatchTool,
+	type SourceWatchManagerProvider,
+	type WatchManagerProvider,
+} from "./watch.js";
 
 const FORGEJO_TOOL_DOMAINS = [
 	"issue",
@@ -65,6 +69,11 @@ export function registerForgejoTools(
 			"Forgejo watch manager is unavailable before session start",
 		);
 	},
+	sourceWatchManagerProvider: SourceWatchManagerProvider = () => {
+		throw new Error(
+			"Forgejo source watch manager is unavailable before session start",
+		);
+	},
 ): ForgejoToolController {
 	registerActionsTool(pi, runtimeProvider);
 	registerContextTools(pi, runtimeProvider);
@@ -73,7 +82,12 @@ export function registerForgejoTools(
 	registerReviewTool(pi, runtimeProvider);
 	registerNotificationTool(pi, runtimeProvider);
 	registerSearchTool(pi, runtimeProvider);
-	registerWatchTool(pi, runtimeProvider, watchManagerProvider);
+	registerWatchTool(
+		pi,
+		runtimeProvider,
+		watchManagerProvider,
+		sourceWatchManagerProvider,
+	);
 
 	pi.registerTool({
 		name: "forgejo_tools",

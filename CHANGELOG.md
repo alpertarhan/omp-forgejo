@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `forgejo_watch events=["ci"]`: one-shot CI watches that poll a pull request's Actions runs by its current head SHA and wake when a run that was in flight or started after arming finishes; new pushes are followed to the fresh head SHA, and runs already terminal at arming are baseline.
+- `forgejo_watch target=review_requests|notifications`: cross-server attention watches that seed a silent baseline and wake the agent on new incoming review requests or unread notifications — the TUI dashboard's human notification, delivered as an agent wake.
+- Watch wake messages now include a re-arm hint for continuing a completed watch, follow-up hints (`forgejo_actions action=jobs` for failed runs, `forgejo_pull action=get` for new review requests), and toolkit-generated item URLs.
+- Integration smoke test against a real Forgejo 16 container in CI (`scripts/smoke.ts`), covering repository, PR, issue, timeline, watch, and attention query flows end to end.
+
+### Changed
+
+- The `User-Agent` version now comes from `package.json` instead of a hand-edited constant.
+- CI runs a third job that exercises the toolkit against a live Forgejo instance.
+
 ### Fixed
 
 - `forgejo_watch` no longer reports a merged pull request as `closed`: resource-level close detection now excludes merges, matching the timeline `closed` filter semantics.

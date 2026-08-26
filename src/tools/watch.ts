@@ -2,6 +2,7 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { parseResourceRef } from "../refs.js";
+import type { SourceWatchManager } from "../source-watch.js";
 import type { WatchManager, WatchFilter } from "../watch.js";
 import {
 	boundModelText,
@@ -11,6 +12,7 @@ import {
 } from "./common.js";
 
 export type WatchManagerProvider = () => WatchManager;
+export type SourceWatchManagerProvider = () => SourceWatchManager;
 
 const WATCH_EVENTS = [
 	"feedback",
@@ -22,12 +24,14 @@ const WATCH_EVENTS = [
 	"reopened",
 	"merged",
 	"push",
+	"ci",
 	"any",
-] as const satisfies readonly WatchFilter[];
+] as const satisfies readonly (WatchFilter | "ci")[];
 
 const START_FIELDS = [
 	"ref",
 	"events",
+	"target",
 	"since",
 	"interval_seconds",
 	"timeout_minutes",
@@ -87,14 +91,19 @@ function validateStartParams(params: Record<string, unknown>): void {
 }
 
 function validateEventsForKind(
-	events: readonly WatchFilter[],
+	events: readonly (WatchFilter | "ci")[],
 	kind: "issue" | "pull",
 ): void {
 	if (kind === "pull") return;
 	const pullOnly = events.filter((event) =>
-		["review_comment", "review", "review_request", "merged", "push"].includes(
-			event,
-		),
+		[
+			"review_comment",
+			"review",
+			"review_request",
+			"merged",
+			"push",
+			"ci",
+		].includes(event),
 	);
 	if (pullOnly.length > 0) {
 		throw new Error(
@@ -107,12 +116,17 @@ export function registerWatchTool(
 	pi: ExtensionAPI,
 	runtimeProvider: RuntimeProvider,
 	watchManagerProvider: WatchManagerProvider,
+	sourceWatchManagerProvider: SourceWatchManagerProvider = () => {
+		throw new Error(
+			"Forgejo source watch manager is unavailable before session start",
+		);
+	},
 ): void {
 	pi.registerTool({
 		name: "forgejo_watch",
 		label: "Forgejo Watch",
 		description:
-			"Start, list, or stop session-scoped one-shot issue and pull-request timeline watches.",
+			"Start, list, or stop session-scoped one-shot watches: issue/PR timelines, PR CI runs (events=[ci]), or cross-server attention targets (target=review_requests|notifications).",
 		parameters: Type.Object({
 			action: StringEnum(["start", "list", "stop"] as const),
 			ref: Type.Optional(
@@ -124,6 +138,14 @@ export function registerWatchTool(
 				Type.Array(StringEnum(WATCH_EVENTS), {
 					minItems: 1,
 					uniqueItems: true,
+					description:
+						"Timeline filters, or [ci] to watch the pull request's Actions runs until they finish",
+				}),
+			),
+			target: Type.Optional(
+				StringEnum(["review_requests", "notifications"] as const, {
+					description:
+						"Cross-server attention target to watch for new items instead of a single ref",
 				}),
 			),
 			since: Type.Optional(
@@ -154,9 +176,13 @@ export function registerWatchTool(
 		async execute(_toolCallId, params, signal) {
 			const runtime = runtimeProvider();
 			const manager = watchManagerProvider();
+			const sourceManager = sourceWatchManagerProvider();
 			if (params.action === "list") {
 				rejectFields(params, [...START_FIELDS, "id", "all"], "list");
-				const watches = manager.list();
+				const watches = [
+					...manager.list().map((watch) => ({ source: "timeline", ...watch })),
+					...sourceManager.list(),
+				];
 				const summaryWatches = watches.map(
 					({ matchedEvents: _events, ...watch }) => watch,
 				);
@@ -176,18 +202,28 @@ export function registerWatchTool(
 					throw new Error("stop requires exactly one of id or all=true");
 				}
 				if (stopAll) {
-					const ids = manager
+					const timelineIds = manager
 						.list()
 						.filter(
 							(watch) => watch.state === "active" && manager.stop(watch.id),
 						)
 						.map((watch) => watch.id);
+					const sourceIds = sourceManager
+						.list()
+						.filter(
+							(watch) =>
+								watch.state === "active" && sourceManager.stop(watch.id),
+						)
+						.map((watch) => watch.id);
+					const ids = [...timelineIds, ...sourceIds];
 					return toolResult(JSON.stringify({ stopped: ids.length, ids }), {
 						stopped: ids.length,
 						ids,
 					});
 				}
-				const stopped = manager.stop(params.id as string);
+				const stopped =
+					manager.stop(params.id as string) ||
+					sourceManager.stop(params.id as string);
 				return toolResult(JSON.stringify({ id: params.id, stopped }), {
 					id: params.id,
 					stopped,
@@ -195,8 +231,33 @@ export function registerWatchTool(
 			}
 
 			rejectFields(params, ["id", "all"], "start");
-			if (!params.ref) throw new Error("ref is required for start");
 			validateStartParams(params);
+
+			if (params.target !== undefined) {
+				rejectFields(
+					params,
+					["ref", "events", "since", "include_self"],
+					"target start",
+				);
+				const existingIds = new Set(
+					sourceManager.list().map((watch) => watch.id),
+				);
+				const watch = await sourceManager.arm({
+					target: params.target,
+					pollIntervalMs: (params.interval_seconds ?? 60) * 1_000,
+					timeoutMs: (params.timeout_minutes ?? 120) * 60_000,
+					attention: params.attention ?? "turn",
+					...(params.note === undefined ? {} : { note: params.note }),
+					...(signal === undefined ? {} : { signal }),
+				});
+				const outcome = existingIds.has(watch.id)
+					? "deduplicated"
+					: "created";
+				const data = { outcome, watch };
+				return toolResult(JSON.stringify(data), data);
+			}
+
+			if (!params.ref) throw new Error("ref or target is required for start");
 			if (params.events !== undefined && params.events.length === 0)
 				throw new Error("events must contain at least one event");
 			const parsed = parseResourceRef(params.ref);
@@ -204,10 +265,35 @@ export function registerWatchTool(
 			const events = params.events ?? ["feedback"];
 			validateEventsForKind(events, parsed.kind);
 			const ref = runtime.resolveResource({ ref: params.ref }, parsed.kind);
+
+			if (events.includes("ci")) {
+				if (events.length > 1)
+					throw new Error(
+						"ci cannot be combined with other events; start a separate timeline watch alongside it",
+					);
+				const existingIds = new Set(
+					sourceManager.list().map((watch) => watch.id),
+				);
+				const watch = await sourceManager.arm({
+					ref,
+					pollIntervalMs: (params.interval_seconds ?? 60) * 1_000,
+					timeoutMs: (params.timeout_minutes ?? 120) * 60_000,
+					attention: params.attention ?? "turn",
+					...(params.note === undefined ? {} : { note: params.note }),
+					...(signal === undefined ? {} : { signal }),
+				});
+				const outcome = existingIds.has(watch.id)
+					? "deduplicated"
+					: "created";
+				const data = { outcome, watch };
+				return toolResult(JSON.stringify(data), data);
+			}
+
 			const existingIds = new Set(manager.list().map((watch) => watch.id));
 			const watch = await manager.arm({
 				ref,
-				filters: events,
+				// "ci" watches returned to the source manager above.
+				filters: events as WatchFilter[],
 				pollIntervalMs: (params.interval_seconds ?? 60) * 1_000,
 				timeoutMs: (params.timeout_minutes ?? 120) * 60_000,
 				attention: params.attention ?? "turn",

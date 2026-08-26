@@ -163,6 +163,47 @@ async function queryLatestFailedRuns(
   }
 }
 
+export type AttentionTarget = "review_requests" | "notifications";
+
+export async function queryAttentionItems(
+	client: ForgejoClient,
+	target: AttentionTarget,
+	limit: number,
+	signal?: AbortSignal,
+): Promise<DashboardItem[]> {
+	const requestOptions = signal === undefined ? {} : { signal };
+	if (target === "review_requests") {
+		const response = await client.request<ForgejoIssue[]>(
+			"repos/issues/search",
+			{
+				...requestOptions,
+				query: {
+					state: "open",
+					type: "pulls",
+					review_requested: true,
+					limit,
+					page: 1,
+				},
+			},
+		);
+		return response.data
+			.map((issue) => issueItem(issue, client.alias, "review"))
+			.filter((item): item is DashboardItem => item !== undefined);
+	}
+	const response = await client.request<ForgejoNotification[]>(
+		"notifications",
+		{
+			...requestOptions,
+			query: { "status-types": ["unread"], limit, page: 1 },
+		},
+	);
+	return response.data
+		.map((notification) =>
+			notificationItem(notification, client.alias, client.config.baseUrl),
+		)
+		.filter((item): item is DashboardItem => item !== undefined);
+}
+
 function collection<T>(
 	data: T[],
 	totalCount: number | undefined,
