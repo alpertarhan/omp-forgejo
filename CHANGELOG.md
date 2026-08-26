@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-26
+
 ### Added
 
 - `forgejo_watch events=["ci"]`: one-shot CI watches that poll a pull request's Actions runs by its current head SHA and wake when a run that was in flight or started after arming finishes; new pushes are followed to the fresh head SHA, and runs already terminal at arming are baseline.
