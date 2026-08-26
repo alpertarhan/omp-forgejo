@@ -513,6 +513,79 @@ describe("WatchManager", () => {
 		manager.close();
 	});
 
+	it("does not report a merge transition as closed", async () => {
+		let currentCalls = 0;
+		const request = vi.fn(async (path: string) => {
+			if (path === "user") return result({ id: 1, login: "alice" });
+			if (path.endsWith("/timeline")) return result([]);
+			currentCalls += 1;
+			return result(
+				currentCalls === 1
+					? current()
+					: current({
+							state: "closed",
+							merged: true,
+							merged_by: { id: 2, login: "bob" },
+						}),
+			);
+		});
+		const emit = vi.fn();
+		const manager = new WatchManager(
+			() => ({ request }) as unknown as ForgejoClient,
+			emit,
+		);
+		await manager.arm({ ref, filters: ["closed"], pollIntervalMs: 100 });
+
+		await vi.advanceTimersByTimeAsync(100);
+
+		expect(manager.list()[0]).toMatchObject({ state: "active" });
+		expect(emit).not.toHaveBeenCalled();
+		manager.close();
+	});
+
+	it("does not satisfy a closed filter with an already merged pull", async () => {
+		const request = vi.fn(async (path: string) => {
+			if (path === "user") return result({ id: 1, login: "alice" });
+			if (path.endsWith("/timeline")) return result([]);
+			return result(current({ state: "closed", merged: true }));
+		});
+		const manager = new WatchManager(
+			() => ({ request }) as unknown as ForgejoClient,
+			vi.fn(),
+		);
+
+		const watch = await manager.arm({ ref, filters: ["closed"] });
+
+		expect(watch).toMatchObject({ state: "active" });
+		manager.close();
+	});
+
+	it("polls the any filter without refetching the resource", async () => {
+		let timelineCalls = 0;
+		let currentCalls = 0;
+		const request = vi.fn(async (path: string) => {
+			if (path === "user") return result({ id: 1, login: "alice" });
+			if (path.endsWith("/timeline")) {
+				timelineCalls += 1;
+				return result([]);
+			}
+			currentCalls += 1;
+			return result(current());
+		});
+		const manager = new WatchManager(
+			() => ({ request }) as unknown as ForgejoClient,
+			vi.fn(),
+		);
+		await manager.arm({ ref, filters: ["any"], pollIntervalMs: 100 });
+		const baselineCurrentCalls = currentCalls;
+
+		await vi.advanceTimersByTimeAsync(100);
+
+		expect(timelineCalls).toBe(2);
+		expect(currentCalls).toBe(baselineCurrentCalls);
+		manager.close();
+	});
+
 	it("returns already-satisfied state without emitting and uses synthetic ID namespace", async () => {
 		const request = vi.fn(async (path: string) => {
 			if (path === "user") return result({ id: 1, login: "alice" });
@@ -609,6 +682,98 @@ describe("WatchManager", () => {
 			fetchSince: "2026-08-12T09:59:55.000Z",
 		});
 		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it("gives an expiring watch one final poll that can still match", async () => {
+		let timelineCalls = 0;
+		const request = vi.fn(async (path: string) => {
+			if (path === "user") return result({ id: 1, login: "alice" });
+			if (path.endsWith("/timeline")) {
+				timelineCalls += 1;
+				return result(timelineCalls === 1 ? [] : [event(5)]);
+			}
+			return result(current());
+		});
+		const emissions: WatchEmission[] = [];
+		const manager = new WatchManager(
+			() => ({ request }) as unknown as ForgejoClient,
+			(value) => {
+				emissions.push(value);
+			},
+		);
+		await manager.arm({
+			ref,
+			filters: ["comment"],
+			pollIntervalMs: 100,
+			timeoutMs: 100,
+		});
+
+		await vi.advanceTimersByTimeAsync(100);
+
+		expect(emissions[0]).toMatchObject({ kind: "matched" });
+		expect(manager.list()[0]).toMatchObject({ state: "matched" });
+	});
+
+	it("times out after a final expiry poll finds no match", async () => {
+		const request = vi.fn(async (path: string) => {
+			if (path === "user") return result({ id: 1, login: "alice" });
+			if (path.endsWith("/timeline")) return result([]);
+			return result(current());
+		});
+		const emissions: WatchEmission[] = [];
+		const manager = new WatchManager(
+			() => ({ request }) as unknown as ForgejoClient,
+			(value) => {
+				emissions.push(value);
+			},
+		);
+		await manager.arm({
+			ref,
+			filters: ["comment"],
+			pollIntervalMs: 100,
+			timeoutMs: 100,
+		});
+
+		await vi.advanceTimersByTimeAsync(100);
+
+		expect(emissions[0]).toMatchObject({ kind: "timed-out" });
+		expect(manager.list()[0]).toMatchObject({ state: "timed-out" });
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it("backs off an incomplete poll scan instead of failing permanently", async () => {
+		let timelineCalls = 0;
+		const request = vi.fn(async (path: string) => {
+			if (path === "user") return result({ id: 1, login: "alice" });
+			if (path.endsWith("/timeline")) {
+				timelineCalls += 1;
+				if (timelineCalls === 1) return result([]);
+				return result([event(100), event(101)], {
+					link: '<https://work.example/api/v1/repos/acme/app/issues/9/timeline?page=3&limit=2>; rel="next"',
+				});
+			}
+			return result(current());
+		});
+		const manager = new WatchManager(
+			() => ({ request }) as unknown as ForgejoClient,
+			vi.fn(),
+		);
+		await manager.arm({
+			ref,
+			filters: ["comment"],
+			pollIntervalMs: 100,
+			pageLimit: 2,
+			maxPages: 1,
+		});
+
+		await vi.advanceTimersByTimeAsync(100);
+
+		expect(manager.list()[0]).toMatchObject({
+			state: "active",
+			failures: 1,
+			lastError: { code: "incomplete" },
+		});
+		manager.close();
 	});
 
 	it("backs off transient failures and emits safe permanent failures", async () => {

@@ -43,6 +43,18 @@ describe("ForgejoClient", () => {
 			),
 		).toBe(false);
 		expect(
+			paginationComplete(
+				{
+					data: [1],
+					status: 200,
+					headers: new Headers({
+						link: '<https://forgejo.example?page=2>; rel=nextpage',
+					}),
+				},
+				1,
+			),
+		).toBe(true);
+		expect(
 			paginationComplete({ data: [], status: 200, headers: new Headers() }, 1),
 		).toBe(true);
 	});

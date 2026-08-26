@@ -134,6 +134,7 @@ interface ActiveWatch extends EventWatch {
 	maxPages: number;
 	nextPollTime?: number;
 	expiresTime?: number;
+	expiryPolled: boolean;
 	inFlight: boolean;
 	controller: AbortController;
 }
@@ -164,7 +165,6 @@ const RESOURCE_FILTERS = new Set<WatchFilter>([
 	"closed",
 	"reopened",
 	"merged",
-	"any",
 ]);
 
 function needsResource(filters: WatchFilter[]): boolean {
@@ -173,12 +173,17 @@ function needsResource(filters: WatchFilter[]): boolean {
 
 function positive(
 	value: number | undefined,
-	fallback: number,
 	name: string,
 	maximum: number,
+	fallback?: number,
 ): number {
 	const result = value ?? fallback;
-	if (!Number.isSafeInteger(result) || result < 1 || result > maximum)
+	if (
+		result === undefined ||
+		!Number.isSafeInteger(result) ||
+		result < 1 ||
+		result > maximum
+	)
 		throw new Error(`${name} must be an integer from 1 to ${maximum}`);
 	return result;
 }
@@ -308,21 +313,26 @@ export class WatchManager {
 		const filters = normalizeFilters(options);
 		const pollIntervalMs = positive(
 			options.pollIntervalMs,
-			DEFAULT_POLL_MS,
 			"pollIntervalMs",
 			MAX_POLL_MS,
+			DEFAULT_POLL_MS,
 		);
 		const timeoutMs =
 			options.timeoutMs === undefined
 				? undefined
-				: positive(options.timeoutMs, 0, "timeoutMs", MAX_TIMEOUT_MS);
+				: positive(options.timeoutMs, "timeoutMs", MAX_TIMEOUT_MS);
 		const pageLimit = positive(
 			options.pageLimit,
-			50,
 			"pageLimit",
 			MAX_PAGE_LIMIT,
+			50,
 		);
-		const maxPages = positive(options.maxPages, 20, "maxPages", MAX_PAGES);
+		const maxPages = positive(
+			options.maxPages,
+			"maxPages",
+			MAX_PAGES,
+			20,
+		);
 		const includeSelf = options.includeSelf ?? false;
 		const attention = options.attention ?? "turn";
 		if (attention !== "turn" && attention !== "context")
@@ -423,6 +433,7 @@ export class WatchManager {
 			maxPages,
 			nextPollTime: now + pollIntervalMs,
 			...(timeoutMs === undefined ? {} : { expiresTime: now + timeoutMs }),
+			expiryPolled: false,
 			inFlight: false,
 			controller: new AbortController(),
 		};
@@ -450,6 +461,7 @@ export class WatchManager {
 		watch.state = "stopped";
 		delete watch.nextPollTime;
 		delete watch.nextPollAt;
+		watch.cursor.eventVersions.clear();
 		watch.controller.abort();
 		this.prune();
 		this.schedule();
@@ -487,7 +499,7 @@ export class WatchManager {
 		let due: number | undefined;
 		for (const watch of this.watches.values()) {
 			if (watch.state !== "active") continue;
-			if (watch.expiresTime !== undefined)
+			if (watch.expiresTime !== undefined && !watch.expiryPolled)
 				due = Math.min(due ?? watch.expiresTime, watch.expiresTime);
 			if (!watch.inFlight && watch.nextPollTime !== undefined)
 				due = Math.min(due ?? watch.nextPollTime, watch.nextPollTime);
@@ -501,9 +513,20 @@ export class WatchManager {
 		this.timer = undefined;
 		const now = Date.now();
 		for (const watch of this.watches.values()) {
-			if (watch.state !== "active") continue;
+			if (watch.state !== "active" || watch.expiryPolled) continue;
 			if (watch.expiresTime !== undefined && watch.expiresTime <= now) {
-				this.finishTimeout(watch);
+				// A poll still running from before the deadline is aborted, but an
+				// idle watch gets one final poll whose result decides the outcome.
+				if (watch.inFlight) {
+					this.finishTimeout(watch);
+					continue;
+				}
+				watch.expiryPolled = true;
+				watch.inFlight = true;
+				delete watch.nextPollTime;
+				delete watch.nextPollAt;
+				void this.poll(watch);
+				continue;
 			} else if (
 				!watch.inFlight &&
 				watch.nextPollTime !== undefined &&
@@ -556,7 +579,19 @@ export class WatchManager {
 			);
 			if (watch.state !== "active") return;
 			if (!scan.complete) {
-				this.finishFailure(watch, safeError(undefined, true));
+				if (this.expired(watch)) {
+					this.finishTimeout(watch);
+					return;
+				}
+				watch.failures += 1;
+				watch.lastError = safeError(undefined, true);
+				this.nextPoll(
+					watch,
+					Math.min(
+						watch.pollIntervalMs * 2 ** watch.failures,
+						MAX_BACKOFF_MS,
+					),
+				);
 				return;
 			}
 			const events = newTimelineEvents(scan.events, watch.cursor);
@@ -590,12 +625,14 @@ export class WatchManager {
 			watch.failures = 0;
 			delete watch.lastError;
 			if (matches.length > 0) this.finishMatched(watch, matches, true);
+			else if (this.expired(watch)) this.finishTimeout(watch);
 			else this.nextPoll(watch, watch.pollIntervalMs);
 		} catch (error) {
 			if (watch.state !== "active" || watch.controller.signal.aborted) return;
 			const metadata = safeError(error);
 			watch.lastError = metadata;
-			if (!isTransient(error)) this.finishFailure(watch, metadata);
+			if (this.expired(watch)) this.finishTimeout(watch);
+			else if (!isTransient(error)) this.finishFailure(watch, metadata);
 			else {
 				watch.failures += 1;
 				this.nextPoll(
@@ -609,6 +646,10 @@ export class WatchManager {
 			watch.inFlight = false;
 			this.schedule();
 		}
+	}
+
+	private expired(watch: ActiveWatch): boolean {
+		return watch.expiresTime !== undefined && watch.expiresTime <= Date.now();
 	}
 
 	private nextPoll(watch: ActiveWatch, delay: number): void {
@@ -650,7 +691,8 @@ export class WatchManager {
 		if (
 			watch.filters.includes("closed") &&
 			watch.lastState !== "closed" &&
-			current.state === "closed"
+			current.state === "closed" &&
+			!merged
 		) {
 			return [this.resourceEvent("close", current.updated_at)];
 		}
@@ -671,7 +713,7 @@ export class WatchManager {
 		const merged = "merged" in current && current.merged === true;
 		if (filters.includes("merged") && merged)
 			return [this.resourceEvent("merge_pull", current.updated_at)];
-		if (filters.includes("closed") && current.state === "closed")
+		if (filters.includes("closed") && current.state === "closed" && !merged)
 			return [this.resourceEvent("close", current.updated_at)];
 		return [];
 	}
@@ -731,6 +773,7 @@ export class WatchManager {
 		delete watch.nextPollTime;
 		delete watch.nextPollAt;
 		watch.controller.abort();
+		watch.cursor.eventVersions.clear();
 		this.prune();
 	}
 

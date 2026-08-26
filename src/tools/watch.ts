@@ -169,8 +169,10 @@ export function registerWatchTool(
 
 			if (params.action === "stop") {
 				rejectFields(params, START_FIELDS, "stop");
+				if (params.all === false)
+					throw new Error("all must be true when provided");
 				const stopAll = params.all === true;
-				if ((params.id !== undefined) === stopAll || params.all === false) {
+				if ((params.id !== undefined) === stopAll) {
 					throw new Error("stop requires exactly one of id or all=true");
 				}
 				if (stopAll) {

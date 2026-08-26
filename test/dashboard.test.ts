@@ -42,6 +42,7 @@ function dashboardFetch(state: {
 	review: boolean;
 	failWork: boolean;
 	includeClosed?: boolean;
+	review2?: boolean;
 }): typeof fetch {
 	return vi.fn<typeof fetch>(async (input) => {
 		const url = new URL(String(input));
@@ -77,6 +78,7 @@ function dashboardFetch(state: {
 			if (url.searchParams.get("review_requested") === "true") {
 				const items = [
 					...(state.review ? [issue(30, "Review this", true)] : []),
+					...(state.review2 ? [issue(32, "Second review", true)] : []),
 					...(state.includeClosed
 						? [issue(31, "Closed review request", true, "closed")]
 						: []),
@@ -432,6 +434,48 @@ describe("DashboardStore", () => {
 		state.review = true;
 		await store.refresh();
 		expect(notify).toHaveBeenCalledTimes(2);
+		notifier.close();
+		store.close();
+	});
+
+	it("does not re-announce items after a degraded server recovers", async () => {
+		const state: Parameters<typeof dashboardFetch>[0] = {
+			review: true,
+			failWork: false,
+		};
+		const store = new DashboardStore(clients(dashboardFetch(state), false), 3);
+		const notify = vi.fn();
+		const notifier = new DashboardNotifier(store, "important", notify);
+		await store.refresh();
+		expect(notify).not.toHaveBeenCalled();
+
+		state.failWork = true;
+		await store.refresh();
+		state.failWork = false;
+		await store.refresh();
+		expect(notify).not.toHaveBeenCalled();
+
+		state.review2 = true;
+		await store.refresh();
+		expect(notify).toHaveBeenCalledTimes(1);
+		expect(notify.mock.calls[0]?.[0]).toContain("work:acme/app!32");
+		notifier.close();
+		store.close();
+	});
+
+	it("does not re-announce items when the dashboard scope changes", async () => {
+		const state = { review: true, failWork: false };
+		const store = new DashboardStore(clients(dashboardFetch(state), false), 3);
+		const notify = vi.fn();
+		const notifier = new DashboardNotifier(store, "important", notify);
+		await store.refresh();
+		expect(notify).not.toHaveBeenCalled();
+
+		store.setScope("current");
+		await store.refresh();
+		store.setScope("all");
+		await store.refresh();
+		expect(notify).not.toHaveBeenCalled();
 		notifier.close();
 		store.close();
 	});

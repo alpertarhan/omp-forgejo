@@ -24,10 +24,18 @@ export function paginationComplete<T>(
 	response: ApiResult<readonly T[]>,
 	received: number,
 ): boolean {
-	const link = response.headers.get("link");
-	if (link !== null) return !/<[^>]+>;\s*rel="?next"?/i.test(link);
+	if (response.headers.get("link") !== null)
+		return !hasNextPage(response.headers);
 	if (response.totalCount !== undefined) return received >= response.totalCount;
 	return response.data.length === 0;
+}
+
+export function hasNextPage(headers: Headers): boolean {
+	const link = headers.get("link");
+	return (
+		link !== null &&
+		/(?:^|,)\s*<[^>]+>\s*;\s*rel="?next"?(?:\s*;|\s*(?:,|$))/i.test(link)
+	);
 }
 
 export interface RequestOptions {
