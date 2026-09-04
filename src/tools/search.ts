@@ -97,7 +97,7 @@ export function registerSearchTool(
     name: "forgejo_search",
     label: "Forgejo Search",
 		description:
-			"Search server-qualified issues, pull requests, repositories, or users across Forgejo servers.",
+			"Search issues, PRs, repositories, or users across Forgejo servers.",
     parameters: Type.Object({
       action: StringEnum(["issues", "pulls", "repositories", "users"] as const),
       query: Type.String({ minLength: 1 }),

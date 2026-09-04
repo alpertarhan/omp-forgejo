@@ -88,7 +88,7 @@ export function registerIssueTool(
 		name: "forgejo_issue",
 		label: "Forgejo Issue",
 		description:
-			"Inspect and manage server-qualified Forgejo issues, discussions, subscriptions, planning metadata, and paginated or incremental timelines. Close only when explicitly requested.",
+			"Read/manage qualified issues, discussion, metadata, subscriptions, and timelines. Close only when asked.",
 		parameters: Type.Object({
 			action: StringEnum([
 				"list",
@@ -116,57 +116,32 @@ export function registerIssueTool(
 			...resourceTargetProperties,
 			title: Type.Optional(Type.String()),
 			body: Type.Optional(Type.String()),
-			comment_id: Type.Optional(
-				Type.Integer({
-					minimum: 1,
-					description:
-						"Repository issue-comment ID returned by get, timeline, or comment",
-				}),
-			),
+			comment_id: Type.Optional(Type.Integer({ minimum: 1 })),
 			state: Type.Optional(StringEnum(["open", "closed", "all"] as const)),
-			query: Type.Optional(
-				Type.String({ description: "Title/body search text for list" }),
-			),
+			query: Type.Optional(Type.String()),
 			labels: Type.Optional(Type.Array(Type.String())),
 			assignees: Type.Optional(Type.Array(Type.String())),
 			milestone: Type.Optional(
 				Type.String({
 					minLength: 1,
-					description: "Milestone title for set_milestone",
 				}),
 			),
 			milestone_id: Type.Optional(
 				Type.Integer({
 					minimum: 1,
-					description:
-						"Milestone ID for set_milestone; mutually exclusive with milestone",
 				}),
 			),
-			due_date: Type.Optional(
-				Type.String({
-					description: "RFC 3339 timestamp with timezone for set_due_date",
-				}),
-			),
+			due_date: Type.Optional(Type.String({ description: "RFC 3339" })),
 			page: Type.Optional(Type.Integer({ minimum: 1 })),
 			limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
 			max_pages: Type.Optional(
 				Type.Integer({
 					minimum: 1,
 					maximum: 100,
-					description:
-						"Maximum timeline pages scanned by updates before withholding cursor advancement",
 				}),
 			),
-			since: Type.Optional(
-				Type.String({
-					description: "RFC 3339 lower timestamp bound for timeline entries",
-				}),
-			),
-			before: Type.Optional(
-				Type.String({
-					description: "RFC 3339 upper timestamp bound for timeline entries",
-				}),
-			),
+			since: Type.Optional(Type.String({ description: "RFC 3339" })),
+			before: Type.Optional(Type.String({ description: "RFC 3339" })),
 			max_bytes: modelOutputBytes(),
 		}),
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {

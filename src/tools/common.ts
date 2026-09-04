@@ -25,18 +25,15 @@ import {
 
 export type RuntimeProvider = () => ForgejoRuntime;
 
-export const DEFAULT_MODEL_OUTPUT_BYTES = 32_000;
-export const DEFAULT_LARGE_MODEL_OUTPUT_BYTES = 64_000;
+export const DEFAULT_MODEL_OUTPUT_BYTES = 16_000;
+export const DEFAULT_LARGE_MODEL_OUTPUT_BYTES = 32_000;
 const MAX_MODEL_OUTPUT_BYTES = 128_000;
 
-export function modelOutputBytes(
-	description = "Maximum model-visible output bytes; default 32 KB",
-) {
+export function modelOutputBytes() {
 	return Type.Optional(
 		Type.Integer({
 			minimum: 1_000,
 			maximum: MAX_MODEL_OUTPUT_BYTES,
-			description,
 		}),
 	);
 }
@@ -57,23 +54,15 @@ async function authenticatedUserName(
 }
 
 export const repoTargetProperties = {
-	ref: Type.Optional(
-		Type.String({
-			description: "Server-qualified Forgejo reference such as work:org/repo#12",
-		}),
-	),
-	server: Type.Optional(
-		Type.String({ description: "Configured Forgejo server alias" }),
-	),
-	owner: Type.Optional(Type.String({ description: "Repository owner" })),
-	repo: Type.Optional(Type.String({ description: "Repository name" })),
+	ref: Type.Optional(Type.String()),
+	server: Type.Optional(Type.String()),
+	owner: Type.Optional(Type.String()),
+	repo: Type.Optional(Type.String()),
 };
 
 export const resourceTargetProperties = {
 	...repoTargetProperties,
-	index: Type.Optional(
-		Type.Integer({ minimum: 1, description: "Issue or pull request number" }),
-	),
+	index: Type.Optional(Type.Integer({ minimum: 1 })),
 };
 
 const MAX_PERSISTED_TOOL_DETAILS_BYTES = 16_000;

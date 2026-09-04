@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-09-04
+
+### Changed
+
+- Compressed model-visible tool schemas and bundled workflow prompts without changing tool names, actions, validation, or confirmation gates; CI now enforces schema and skill byte budgets.
+- Model-visible output now defaults to 16 KB for normal results and 32 KB for diffs, Actions logs, and watch lists; callers can still request up to 128 KB with `max_bytes`.
+- Raised the declared Node.js floor from 20.3 to 22.19.0 to match Pi's own runtime requirement; the CI import smoke test now runs under Node 22.19.
+
 ## [0.6.0] - 2026-08-26
 
 ### Added

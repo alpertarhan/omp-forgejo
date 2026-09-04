@@ -382,7 +382,7 @@ export function registerPullTool(
 		name: "forgejo_pull",
 		label: "Forgejo Pull Request",
 		description:
-			"Inspect and manage server-qualified Forgejo pull requests, discussions, reviews, checks, diffs, metadata, lifecycle, and guarded merges. Close only when explicitly requested; mark_ready and merge require confirmation.",
+			"Read/manage qualified PRs, discussion, checks, diffs, metadata, and guarded merges. Close only when asked; ready/merge require confirmation.",
 		parameters: Type.Object({
 			action: StringEnum([
 				"list",
@@ -421,65 +421,41 @@ export function registerPullTool(
 			...resourceTargetProperties,
 			title: Type.Optional(Type.String()),
 			body: Type.Optional(Type.String()),
-			comment_id: Type.Optional(
-				Type.Integer({
-					minimum: 1,
-					description:
-						"Repository issue-comment ID returned by get, timeline, or comment",
-				}),
-			),
+			comment_id: Type.Optional(Type.Integer({ minimum: 1 })),
 			reviewers: Type.Optional(
-				Type.Array(Type.String({ minLength: 1 }), {
-					description: "Usernames to request or remove from pull-request review",
-				}),
+				Type.Array(Type.String({ minLength: 1 })),
 			),
 			reviewer_teams: Type.Optional(
-				Type.Array(Type.String({ minLength: 1 }), {
-					description: "Team names to request or remove from pull-request review",
-				}),
+				Type.Array(Type.String({ minLength: 1 })),
 			),
 			labels: Type.Optional(
 				Type.Array(Type.String(), {
-					description: "Desired pull-request labels; an empty list clears labels",
+					description: "Desired labels; [] clears",
 				}),
 			),
 			assignees: Type.Optional(
 				Type.Array(Type.String(), {
-					description:
-						"Desired pull-request assignees; an empty list clears assignees",
+					description: "Desired assignees; [] clears",
 				}),
 			),
 			milestone: Type.Optional(
 				Type.String({
 					minLength: 1,
-					description: "Milestone title for set_milestone",
 				}),
 			),
 			milestone_id: Type.Optional(
 				Type.Integer({
 					minimum: 1,
-					description:
-						"Milestone ID for set_milestone; mutually exclusive with milestone",
 				}),
 			),
-			due_date: Type.Optional(
-				Type.String({
-					description: "RFC 3339 timestamp with timezone for set_due_date",
-				}),
-			),
-			allow_maintainer_edit: Type.Optional(
-				Type.Boolean({
-					description: "Whether maintainers may edit the pull-request branch",
-				}),
-			),
+			due_date: Type.Optional(Type.String({ description: "RFC 3339" })),
+			allow_maintainer_edit: Type.Optional(Type.Boolean()),
 			head: Type.Optional(
-				Type.String({ description: "Head branch, optionally owner:branch" }),
+				Type.String({ description: "Branch or owner:branch" }),
 			),
-			base: Type.Optional(Type.String({ description: "Target branch" })),
+			base: Type.Optional(Type.String()),
 			draft: Type.Optional(
-				Type.Boolean({
-					description: "Prefix a new PR title with the Forgejo default WIP marker",
-				}),
+				Type.Boolean({ description: "Create as draft" }),
 			),
 			state: Type.Optional(StringEnum(["open", "closed", "all"] as const)),
 			page: Type.Optional(Type.Integer({ minimum: 1 })),
@@ -488,23 +464,11 @@ export function registerPullTool(
 				Type.Integer({
 					minimum: 1,
 					maximum: 100,
-					description:
-						"Maximum timeline pages scanned by updates before withholding cursor advancement",
 				}),
 			),
-			since: Type.Optional(
-				Type.String({
-					description: "RFC 3339 lower timestamp bound for timeline entries",
-				}),
-			),
-			before: Type.Optional(
-				Type.String({
-					description: "RFC 3339 upper timestamp bound for timeline entries",
-				}),
-			),
-			max_bytes: modelOutputBytes(
-				"Maximum model-visible output bytes; default 32 KB, or 64 KB for diff",
-			),
+			since: Type.Optional(Type.String({ description: "RFC 3339" })),
+			before: Type.Optional(Type.String({ description: "RFC 3339" })),
+			max_bytes: modelOutputBytes(),
 			merge_method: Type.Optional(
 				StringEnum([
 					"merge",
@@ -514,11 +478,7 @@ export function registerPullTool(
 					"fast-forward-only",
 				] as const),
 			),
-			delete_branch: Type.Optional(
-				Type.Boolean({
-					description: "Delete the source branch after a successful merge",
-				}),
-			),
+			delete_branch: Type.Optional(Type.Boolean()),
 		}),
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			const runtime = runtimeProvider();

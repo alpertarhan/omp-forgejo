@@ -16,7 +16,7 @@ For a substantial behavior or API change, open a proposal issue first. This avoi
 Requirements:
 
 - [Bun](https://bun.sh/) 1.3.14 or newer
-- Node.js 20 or newer, because Pi runs extensions in its Node.js environment
+- Node.js 22.19 or newer, because Pi runs extensions in its Node.js environment
 - A current [Pi](https://pi.dev/) installation
 - Optional: [`fgj`](https://codeberg.org/forgejo-contrib/forgejo-cli) and a disposable Forgejo test instance for integration work
 

@@ -196,7 +196,7 @@ export function registerNotificationTool(
     name: "forgejo_notifications",
     label: "Forgejo Notifications",
     description:
-      "List and update notification threads on one or all configured Forgejo servers.",
+      "Read or update notification threads across Forgejo servers.",
     parameters: Type.Object({
       action: StringEnum([
         "list",
@@ -205,24 +205,12 @@ export function registerNotificationTool(
         "mark_unread",
         "mark_all_read",
       ] as const),
-      server: Type.Optional(
-        Type.String({
-          description:
-            "Server alias; list and mark_all_read may span all servers",
-        }),
-      ),
-      id: Type.Optional(
-        Type.Integer({ minimum: 1, description: "Notification thread ID" }),
-      ),
+      server: Type.Optional(Type.String()),
+      id: Type.Optional(Type.Integer({ minimum: 1 })),
       page: Type.Optional(Type.Integer({ minimum: 1 })),
       limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
       max_bytes: modelOutputBytes(),
-      resolve_latest: Type.Optional(
-        Type.Boolean({
-          description:
-            "For get, securely fetch and render the latest issue or pull-request comment",
-        }),
-      ),
+      resolve_latest: Type.Optional(Type.Boolean()),
       subject_type: Type.Optional(
         StringEnum(["issue", "pull", "repository"] as const),
       ),

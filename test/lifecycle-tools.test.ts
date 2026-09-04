@@ -29,6 +29,7 @@ interface CapturedTool {
 
 interface RegisteredTool extends CapturedTool {
 	name: string;
+	description: string;
 	promptSnippet?: string;
 	promptGuidelines?: string[];
 	parameters: {
@@ -919,6 +920,8 @@ describe("Forgejo tool activation", () => {
 			expect(tool?.promptSnippet, name).toBeUndefined();
 			expect(tool?.promptGuidelines, name).toBeUndefined();
 		}
+		expect(tools.get("forgejo_context")?.promptSnippet).toBeUndefined();
+		expect(tools.get("forgejo_tools")?.promptSnippet).toBeUndefined();
 		for (const name of lazyNames.filter(
 			(name) => name !== "forgejo_dashboard" && name !== "forgejo_watch",
 		)) {
@@ -927,5 +930,54 @@ describe("Forgejo tool activation", () => {
 				name,
 			).toBe(128_000);
 		}
+	});
+
+	it("keeps Forgejo tool schemas within model-context budgets", () => {
+		const tools = new Map<string, RegisteredTool>();
+		const api = {
+			registerTool(definition: RegisteredTool) {
+				tools.set(definition.name, definition);
+			},
+		} as unknown as ExtensionAPI;
+		registerForgejoTools(api, () => {
+			throw new Error("runtime must not be created while registering tools");
+		});
+
+		const schemaBytes = (tool: RegisteredTool) =>
+			Buffer.byteLength(
+				JSON.stringify({
+					name: tool.name,
+					description: tool.description,
+					parameters: tool.parameters,
+				}),
+				"utf8",
+			);
+		const bootstrapBytes = ["forgejo_context", "forgejo_tools"].reduce(
+			(total, name) => total + schemaBytes(tools.get(name)!),
+			0,
+		);
+		const allBytes = [...tools.values()].reduce(
+			(total, tool) => total + schemaBytes(tool),
+			0,
+		);
+
+		expect(bootstrapBytes).toBeLessThanOrEqual(750);
+		expect(allBytes).toBeLessThanOrEqual(9_500);
+	});
+});
+
+describe("Forgejo workflow prompt budgets", () => {
+	it.each([
+		"forgejo-issue-to-pr",
+		"forgejo-pr-review",
+	])("keeps %s concise and avoids repeated loader turns", async (skill) => {
+		const content = await readFile(
+			new URL(`../skills/${skill}/SKILL.md`, import.meta.url),
+			"utf8",
+		);
+
+		expect(Buffer.byteLength(content, "utf8")).toBeLessThanOrEqual(3_000);
+		expect(content.match(/with `forgejo_tools`/g)).toHaveLength(1);
+		expect(content).toContain("avoid extra loader round-trips");
 	});
 });

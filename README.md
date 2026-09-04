@@ -248,6 +248,14 @@ The package registers ten model-callable tools. Users normally describe the desi
 
 By default, only `forgejo_context` and the compact `forgejo_tools` loader are active. The loader activates at most four requested issue, pull, review, Actions, notification, search, dashboard, or watch domains per call, additively for the current session; a new session returns to the compact set. There is deliberately no "load everything" option. The bundled skills request only their required domains. This keeps eight larger schemas out of Pi's initial context and avoids rebuilding the system prompt when a domain is activated, without delaying slash commands or the TUI dashboard.
 
+If you use only the raw tools and slash commands, omit the two workflow entries from every prompt with a package filter:
+
+```json
+{ "source": "npm:pi-forgejo-toolkit", "skills": [] }
+```
+
+The extension and all tools remain available; only automatic `forgejo-issue-to-pr` and `forgejo-pr-review` skill selection is disabled.
+
 | Tool | Actions |
 | --- | --- |
 | `forgejo_context` | `current`, `servers`, `select`, `whoami`, `health`, `capabilities`, `resolve_ref` |
@@ -267,7 +275,7 @@ Besides per-ref timeline watches, `forgejo_watch` starts two source watches. `ev
 
 Wake messages contain only bounded toolkit-generated metadata: an exact follow-up hint (`forgejo_pull action=updates`, `forgejo_actions action=jobs`, or `forgejo_pull action=get`), a re-arm hint for continuing a completed watch, item URLs where the toolkit generates them, and for attention items a sanitized 120-character title — remote bodies, diffs, run titles, and raw errors are always excluded. Timeline cursor state stores fixed-size event fingerprints rather than remote bodies or titles.
 
-Model-visible metadata and discussion output defaults to 32 KB. Pull-request diffs and Actions job logs default to 64 KB. `max_bytes` can lower either budget but is hard-capped at 128 KB; truncated timeline results retain pagination and recovery metadata. Cross-server search includes a bounded, single-line body preview; use the qualified result with `forgejo_issue` or `forgejo_pull` when the complete body is needed. Oversized hidden tool details are compacted before Pi persists them, retaining small identifiers and recovery fields rather than duplicating full remote payloads in session history. Artifact downloads use the separate `max_download_bytes` limit and write ZIP bytes to a deliberate workspace path instead of returning the archive to the model.
+Model-visible metadata and discussion output defaults to 16 KB. Pull-request diffs, Actions job logs, and watch lists default to 32 KB. `max_bytes` can raise or lower configurable budgets but is hard-capped at 128 KB; truncation is explicit, and paginated results retain recovery metadata. Cross-server search includes a bounded, single-line body preview; use the qualified result with `forgejo_issue` or `forgejo_pull` when the complete body is needed. Oversized hidden tool details are compacted before Pi persists them, retaining small identifiers and recovery fields rather than duplicating full remote payloads in session history. Artifact downloads use the separate `max_download_bytes` limit and write ZIP bytes to a deliberate workspace path instead of returning the archive to the model.
 
 ## Dashboard
 

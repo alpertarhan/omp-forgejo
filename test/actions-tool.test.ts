@@ -245,10 +245,10 @@ describe("forgejo_actions mutation safety", () => {
 });
 
 describe("forgejo_actions output budgets", () => {
-  it("limits default job-log reads to 64 KB", async () => {
+  it("limits default job-log reads to 32 KB", async () => {
     const request = vi.fn(async (path: string, options?: RequestOptions) => {
       expect(path).toBe("repos/acme/app/actions/jobs/17/logs");
-      expect(options?.byteRange).toEqual({ start: 0, end: 63_999 });
+      expect(options?.byteRange).toEqual({ start: 0, end: 31_999 });
       return apiResult("bounded log", 206);
     });
     const tool = captureActionsTool(fakeRuntime(request));
@@ -261,7 +261,7 @@ describe("forgejo_actions output budgets", () => {
       noUi,
     );
 
-    expect(JSON.stringify(result)).toContain("[log truncated at 64000 bytes]");
+    expect(JSON.stringify(result)).toContain("[log truncated at 32000 bytes]");
     expect(request).toHaveBeenCalledOnce();
   });
 });

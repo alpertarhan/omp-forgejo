@@ -144,7 +144,7 @@ describe("issue conversation output", () => {
     expect(commentCall?.[1]?.query).toBeUndefined();
   });
 
-  it("bounds issue snapshots to 32 KB by default", async () => {
+  it("bounds issue snapshots to 16 KB by default", async () => {
     const fixture = issueRuntime("x".repeat(40_000));
     const tool = captureTool(registerIssueTool, fixture.runtime);
     const result = requireToolOutput(
@@ -152,9 +152,9 @@ describe("issue conversation output", () => {
     );
     const text = outputText(result);
 
-    expect(Buffer.byteLength(text, "utf8")).toBeLessThanOrEqual(32_000);
-    expect(text).toContain("[output truncated at 32000 bytes]");
-    expect(result.details.data).toMatchObject({ truncated: true, renderedBytes: 32_000 });
+    expect(Buffer.byteLength(text, "utf8")).toBeLessThanOrEqual(16_000);
+    expect(text).toContain("[output truncated at 16000 bytes]");
+    expect(result.details.data).toMatchObject({ truncated: true, renderedBytes: 16_000 });
   });
 
   it("uses timeline pagination and timestamp bounds without hiding event bodies", async () => {

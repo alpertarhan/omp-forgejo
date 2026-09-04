@@ -248,7 +248,7 @@ export function registerActionsTool(
 		name: "forgejo_actions",
 		label: "Forgejo Actions",
 		description:
-			"Inspect Forgejo Actions runs, jobs, logs, and artifacts; safely dispatch workflows, cancel or rerun supported runs, and download bounded artifact archives.",
+			"Read Actions runs, jobs, logs, and artifacts; dispatch, cancel, rerun, or download safely.",
 		parameters: Type.Object({
 			action: StringEnum([
 				"list",
@@ -263,78 +263,33 @@ export function registerActionsTool(
 				"download_artifact",
 			] as const),
 			...repoTargetProperties,
-			run_id: Type.Optional(
-				Type.Integer({
-					minimum: 1,
-					description: "Workflow run database ID returned by list",
-				}),
-			),
-			job_id: Type.Optional(
-				Type.Integer({
-					minimum: 1,
-					description: "Workflow job ID returned by jobs",
-				}),
-			),
-			attempt: Type.Optional(
-				Type.Integer({
-					minimum: 1,
-					description: "Historical job attempt; omit for latest",
-				}),
-			),
-			artifact_id: Type.Optional(
-				Type.Integer({
-					minimum: 1,
-					description: "Artifact ID returned by artifacts",
-				}),
-			),
-			artifact_name: Type.Optional(
-				Type.String({
-					minLength: 1,
-					description: "Exact artifact-name filter for artifacts",
-				}),
-			),
+			run_id: Type.Optional(Type.Integer({ minimum: 1 })),
+			job_id: Type.Optional(Type.Integer({ minimum: 1 })),
+			attempt: Type.Optional(Type.Integer({ minimum: 1 })),
+			artifact_id: Type.Optional(Type.Integer({ minimum: 1 })),
+			artifact_name: Type.Optional(Type.String({ minLength: 1 })),
 			status: Type.Optional(StringEnum(ACTION_STATUSES)),
-			event: Type.Optional(
-				Type.String({
-					description: "Trigger event such as push or pull_request",
-				}),
-			),
-			git_ref: Type.Optional(
-				Type.String({
-					minLength: 1,
-					description: "Git reference for filtering or workflow dispatch",
-				}),
-			),
+			event: Type.Optional(Type.String()),
+			git_ref: Type.Optional(Type.String({ minLength: 1 })),
 			head_sha: Type.Optional(Type.String()),
 			workflow_id: Type.Optional(
-				Type.String({ minLength: 1, description: "Workflow filename" }),
+				Type.String({ minLength: 1 }),
 			),
-			inputs: Type.Optional(
-				Type.Record(Type.String(), Type.String(), {
-					description: "Workflow-dispatch input values",
-				}),
-			),
+			inputs: Type.Optional(Type.Record(Type.String(), Type.String())),
 			output_path: Type.Optional(
 				Type.String({
 					minLength: 1,
-					description: "Artifact ZIP destination relative to the current workspace",
+					description: "Workspace-relative ZIP path",
 				}),
 			),
-			overwrite: Type.Optional(
-				Type.Boolean({
-					description: "Allow replacing an existing artifact output file",
-				}),
-			),
+			overwrite: Type.Optional(Type.Boolean()),
 			page: Type.Optional(Type.Integer({ minimum: 1 })),
 			limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 50 })),
-			max_bytes: modelOutputBytes(
-				"Maximum model-visible job-log bytes; default 64 KB",
-			),
+			max_bytes: modelOutputBytes(),
 			max_download_bytes: Type.Optional(
 				Type.Integer({
 					minimum: 1_000,
 					maximum: 1_000_000_000,
-					description: "Maximum artifact metadata size and downloaded ZIP bytes",
 				}),
 			),
 		}),

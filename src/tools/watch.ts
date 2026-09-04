@@ -6,7 +6,7 @@ import type { SourceWatchManager } from "../source-watch.js";
 import type { WatchManager, WatchFilter } from "../watch.js";
 import {
 	boundModelText,
-	DEFAULT_MODEL_OUTPUT_BYTES,
+	DEFAULT_LARGE_MODEL_OUTPUT_BYTES,
 	toolResult,
 	type RuntimeProvider,
 } from "./common.js";
@@ -126,34 +126,23 @@ export function registerWatchTool(
 		name: "forgejo_watch",
 		label: "Forgejo Watch",
 		description:
-			"Start, list, or stop session-scoped one-shot watches: issue/PR timelines, PR CI runs (events=[ci]), or cross-server attention targets (target=review_requests|notifications).",
+			"Start/list/stop one-shot watches for issue/PR events, PR CI, review requests, or notifications.",
 		parameters: Type.Object({
 			action: StringEnum(["start", "list", "stop"] as const),
-			ref: Type.Optional(
-				Type.String({
-					description: "Qualified Forgejo issue or pull request reference",
-				}),
-			),
+			ref: Type.Optional(Type.String()),
 			events: Type.Optional(
 				Type.Array(StringEnum(WATCH_EVENTS), {
 					minItems: 1,
 					uniqueItems: true,
-					description:
-						"Timeline filters, or [ci] to watch the pull request's Actions runs until they finish",
+					description: "Timeline events or [ci]",
 				}),
 			),
 			target: Type.Optional(
 				StringEnum(["review_requests", "notifications"] as const, {
-					description:
-						"Cross-server attention target to watch for new items instead of a single ref",
+					description: "Cross-server source instead of ref",
 				}),
 			),
-			since: Type.Optional(
-				Type.String({
-					format: "date-time",
-					description: "Optional RFC 3339 history baseline",
-				}),
-			),
+			since: Type.Optional(Type.String({ format: "date-time" })),
 			interval_seconds: Type.Optional(
 				Type.Integer({ minimum: 30, maximum: 3600, default: 60 }),
 			),
@@ -165,10 +154,7 @@ export function registerWatchTool(
 			),
 			include_self: Type.Optional(Type.Boolean({ default: false })),
 			note: Type.Optional(
-				Type.String({
-					maxLength: 500,
-					description: "Optional agent-authored reminder",
-				}),
+				Type.String({ maxLength: 500 }),
 			),
 			id: Type.Optional(Type.String({ minLength: 1 })),
 			all: Type.Optional(Type.Boolean()),
@@ -188,7 +174,7 @@ export function registerWatchTool(
 				);
 				const summary = boundModelText(
 					JSON.stringify({ watches: summaryWatches }),
-					DEFAULT_MODEL_OUTPUT_BYTES,
+					DEFAULT_LARGE_MODEL_OUTPUT_BYTES,
 				);
 				return toolResult(summary.text, { watches });
 			}

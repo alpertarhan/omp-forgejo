@@ -39,9 +39,7 @@ export function registerContextTools(
 	pi.registerTool({
 		name: "forgejo_context",
 		label: "Forgejo Context",
-		description:
-			"Resolve Forgejo server, repository, identity, health, capabilities, or qualified refs.",
-		promptSnippet: "Resolve Forgejo context and references",
+		description: "Resolve Forgejo context, health, capabilities, or ref.",
 		parameters: Type.Object({
 			action: StringEnum([
 				"current",
@@ -52,14 +50,8 @@ export function registerContextTools(
 				"capabilities",
 				"resolve_ref",
 			] as const),
-			server: Type.Optional(
-				Type.String({
-					description: "Configured server alias; required for select",
-				}),
-			),
-			ref: Type.Optional(
-				Type.String({ description: "Forgejo reference to resolve" }),
-			),
+			server: Type.Optional(Type.String()),
+			ref: Type.Optional(Type.String()),
 		}),
 		async execute(_toolCallId, params, signal) {
 			const runtime = runtimeProvider();
@@ -181,7 +173,7 @@ export function registerContextTools(
 		name: "forgejo_dashboard",
 		label: "Forgejo Dashboard",
 		description:
-			"Read the multi-server attention dashboard: issues, PRs, reviews, failed CI, and notifications.",
+			"Read multi-server issues, PRs, reviews, failed CI, and notifications.",
 		parameters: Type.Object({
 			action: StringEnum([
 				"get",
@@ -192,9 +184,7 @@ export function registerContextTools(
 				"get_review_requests",
 				"get_failed_runs",
 			] as const),
-			server: Type.Optional(
-				Type.String({ description: "Limit results to one server alias" }),
-			),
+			server: Type.Optional(Type.String()),
 			limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
 		}),
 		async execute(_toolCallId, params, signal) {

@@ -92,8 +92,7 @@ export function registerForgejoTools(
 	pi.registerTool({
 		name: "forgejo_tools",
 		label: "Forgejo Tools",
-		description: "Activate Forgejo tool domains needed by the current task.",
-		promptSnippet: "Load additional Forgejo tools when needed",
+		description: "Activate needed Forgejo domains.",
 		promptGuidelines: [
 			"Use forgejo_tools before an unavailable Forgejo operation.",
 		],
@@ -102,8 +101,6 @@ export function registerForgejoTools(
 				minItems: 1,
 				maxItems: MAX_DOMAINS_PER_LOAD,
 				uniqueItems: true,
-				description:
-					"Activate one to four domains; call again only if the task expands",
 			}),
 		}),
 		async execute(_toolCallId, params) {

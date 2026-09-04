@@ -48,7 +48,7 @@ export function registerReviewTool(
     name: "forgejo_review",
     label: "Forgejo Review",
     description:
-      "Read complete remote reviews and inline comments or prepare an in-memory review draft. Submitting always previews and asks the user for confirmation.",
+      "Read reviews/comments or draft, preview, and submit a review. Submit requires confirmation.",
     parameters: Type.Object({
       action: StringEnum([
         "list",
@@ -66,11 +66,7 @@ export function registerReviewTool(
         StringEnum(["COMMENT", "APPROVED", "REQUEST_CHANGES"] as const),
       ),
       body: Type.Optional(Type.String()),
-      replace: Type.Optional(
-        Type.Boolean({
-          description: "Replace an existing in-memory review draft",
-        }),
-      ),
+      replace: Type.Optional(Type.Boolean()),
       path: Type.Optional(Type.String()),
       new_position: Type.Optional(Type.Integer({ minimum: 1 })),
       old_position: Type.Optional(Type.Integer({ minimum: 1 })),
