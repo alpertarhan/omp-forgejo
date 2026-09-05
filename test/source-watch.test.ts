@@ -428,3 +428,170 @@ describe("SourceWatchManager reliability", () => {
 		expect(vi.getTimerCount()).toBe(0);
 	});
 });
+
+describe("SourceWatchManager server degradation", () => {
+	it("keeps waking from healthy servers while another server is degraded", async () => {
+		let communityDown = false;
+		let workHasItem = false;
+		const workRequest = vi.fn(async (path: string) => {
+			if (path === "repos/issues/search")
+				return result(workHasItem ? [reviewIssue(31)] : []);
+			throw new Error(`unexpected path ${path}`);
+		});
+		const communityRequest = vi.fn(async (path: string) => {
+			if (path === "repos/issues/search") {
+				if (communityDown)
+					throw new ForgejoError("REMOTE NETWORK BODY", {
+						server: "community",
+						code: "network",
+					});
+				return result([]);
+			}
+			throw new Error(`unexpected path ${path}`);
+		});
+		const { manager: subject, emissions } = manager(
+			(server) =>
+				fakeClient(
+					server === "work" ? workRequest : communityRequest,
+					server as ServerAlias,
+				),
+			["work", "community"],
+		);
+		await subject.arm({
+			target: "review_requests",
+			servers: ["work", "community"],
+			pollIntervalMs: 100,
+		});
+
+		communityDown = true;
+		workHasItem = true;
+		await vi.advanceTimersByTimeAsync(100);
+
+		if (emissions[0]?.kind !== "matched") throw new Error("expected match");
+		expect(emissions[0].events[0]).toMatchObject({
+			reference: "work:acme/app!31",
+		});
+		expect(subject.list()[0]).toMatchObject({
+			state: "matched",
+			degradedServers: ["community"],
+			lastError: { code: "network" },
+		});
+	});
+
+	it("absorbs a degraded-at-arm server's items silently on recovery", async () => {
+		let communityDown = true;
+		let communityItems: ForgejoIssue[] = [reviewIssue(40)];
+		const workRequest = vi.fn(async (path: string) => {
+			if (path === "repos/issues/search") return result([]);
+			throw new Error(`unexpected path ${path}`);
+		});
+		const communityRequest = vi.fn(async (path: string) => {
+			if (path === "repos/issues/search") {
+				if (communityDown)
+					throw new ForgejoError("REMOTE NETWORK BODY", {
+						server: "community",
+						code: "network",
+					});
+				return result(communityItems);
+			}
+			throw new Error(`unexpected path ${path}`);
+		});
+		const { manager: subject, emissions } = manager(
+			(server) =>
+				fakeClient(
+					server === "work" ? workRequest : communityRequest,
+					server as ServerAlias,
+				),
+			["work", "community"],
+		);
+		const armed = await subject.arm({
+			target: "review_requests",
+			servers: ["work", "community"],
+			pollIntervalMs: 100,
+		});
+		expect(armed.degradedServers).toEqual(["community"]);
+
+		communityDown = false;
+		await vi.advanceTimersByTimeAsync(100);
+		expect(emissions).toHaveLength(0);
+		expect(subject.list()[0]).toMatchObject({ state: "active" });
+		expect(subject.list()[0]?.degradedServers).toBeUndefined();
+
+		const absorbed = communityItems[0] as ForgejoIssue;
+		communityItems = [absorbed, reviewIssue(41)];
+		await vi.advanceTimersByTimeAsync(100);
+		if (emissions[0]?.kind !== "matched") throw new Error("expected match");
+		expect(emissions[0].events.map((event) => event.reference)).toEqual([
+			"community:acme/app!41",
+		]);
+	});
+
+	it("backs off only when every server is degraded", async () => {
+		let allDown = false;
+		const request = vi.fn(async (path: string) => {
+			if (path === "repos/issues/search") {
+				if (allDown)
+					throw new ForgejoError("REMOTE NETWORK BODY", {
+						server: "work",
+						code: "network",
+					});
+				return result([]);
+			}
+			throw new Error(`unexpected path ${path}`);
+		});
+		const { manager: subject } = manager((server) =>
+			fakeClient(request, server as ServerAlias),
+		);
+		await subject.arm({ target: "review_requests", pollIntervalMs: 100 });
+
+		allDown = true;
+		await vi.advanceTimersByTimeAsync(100);
+		expect(subject.list()[0]).toMatchObject({
+			state: "active",
+			failures: 1,
+			lastError: { code: "network" },
+		});
+	});
+
+	it("delivers a healthy-server match on the final expiry poll despite a degraded peer", async () => {
+		let communityDown = false;
+		let workHasItem = false;
+		const workRequest = vi.fn(async (path: string) => {
+			if (path === "repos/issues/search")
+				return result(workHasItem ? [reviewIssue(55)] : []);
+			throw new Error(`unexpected path ${path}`);
+		});
+		const communityRequest = vi.fn(async (path: string) => {
+			if (path === "repos/issues/search") {
+				if (communityDown)
+					throw new ForgejoError("REMOTE NETWORK BODY", {
+						server: "community",
+						code: "network",
+					});
+				return result([]);
+			}
+			throw new Error(`unexpected path ${path}`);
+		});
+		const { manager: subject, emissions } = manager(
+			(server) =>
+				fakeClient(
+					server === "work" ? workRequest : communityRequest,
+					server as ServerAlias,
+				),
+			["work", "community"],
+		);
+		await subject.arm({
+			target: "review_requests",
+			servers: ["work", "community"],
+			pollIntervalMs: 100,
+			timeoutMs: 100,
+		});
+
+		communityDown = true;
+		workHasItem = true;
+		await vi.advanceTimersByTimeAsync(100);
+
+		if (emissions[0]?.kind !== "matched") throw new Error("expected match");
+		expect(subject.list()[0]).toMatchObject({ state: "matched" });
+	});
+});

@@ -981,3 +981,34 @@ describe("Forgejo workflow prompt budgets", () => {
 		expect(content).toContain("avoid extra loader round-trips");
 	});
 });
+
+describe("forgejo_tools loader cheatsheet", () => {
+	it("returns per-domain action hints with activation", async () => {
+		const tools = new Map<string, { execute: (id: string, params: unknown) => Promise<{ content: Array<{ type: string; text: string }> }> }>();
+		const api = {
+			registerTool(definition: { name: string; execute: (id: string, params: unknown) => Promise<{ content: Array<{ type: string; text: string }> }> }) {
+				tools.set(definition.name, definition);
+			},
+		} as unknown as ExtensionAPI;
+		const active = ["read", "forgejo_context", "forgejo_tools"];
+		const pi = {
+			...api,
+			getActiveTools: () => active,
+			setActiveTools: (names: string[]) => {
+				active.length = 0;
+				active.push(...names);
+			},
+		} as unknown as ExtensionAPI;
+		registerForgejoTools(pi, () => {
+			throw new Error("runtime must not be created while registering tools");
+		});
+		const loader = tools.get("forgejo_tools");
+		if (!loader) throw new Error("loader was not registered");
+		const result = await loader.execute("t1", { domains: ["issue", "watch"] });
+		const text = result.content.find((part) => part.type === "text")?.text ?? "";
+		expect(text).toContain("issue:");
+		expect(text).toContain("refs[]");
+		expect(text).toContain("watch:");
+		expect(text).toContain("target=");
+	});
+});

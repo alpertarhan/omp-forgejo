@@ -1,5 +1,11 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
+import {
+	batchCreatePulls,
+	batchGetPulls,
+	batchPatchPulls,
+	MAX_BATCH_REFS,
+} from "./batch.js";
 import { Type } from "typebox";
 import { apiPath, paginationComplete } from "../client.js";
 import type { ForgejoClient } from "../client.js";
@@ -419,6 +425,28 @@ export function registerPullTool(
 				"merge",
 			] as const),
 			...resourceTargetProperties,
+			refs: Type.Optional(
+				Type.Array(Type.String(), {
+					minItems: 1,
+					maxItems: MAX_BATCH_REFS,
+					description: "Batch get/update/close/reopen",
+				}),
+			),
+			prs: Type.Optional(
+				Type.Array(
+					Type.Object({
+						head: Type.String(),
+						base: Type.String(),
+						title: Type.String(),
+						body: Type.Optional(Type.String()),
+					}),
+					{
+						minItems: 1,
+						maxItems: MAX_BATCH_REFS,
+						description: "Batch create; WIP: title = draft",
+					},
+				),
+			),
 			title: Type.Optional(Type.String()),
 			body: Type.Optional(Type.String()),
 			comment_id: Type.Optional(Type.Integer({ minimum: 1 })),
@@ -430,12 +458,12 @@ export function registerPullTool(
 			),
 			labels: Type.Optional(
 				Type.Array(Type.String(), {
-					description: "Desired labels; [] clears",
+					description: "[] clears",
 				}),
 			),
 			assignees: Type.Optional(
 				Type.Array(Type.String(), {
-					description: "Desired assignees; [] clears",
+					description: "[] clears",
 				}),
 			),
 			milestone: Type.Optional(
@@ -454,9 +482,7 @@ export function registerPullTool(
 				Type.String({ description: "Branch or owner:branch" }),
 			),
 			base: Type.Optional(Type.String()),
-			draft: Type.Optional(
-				Type.Boolean({ description: "Create as draft" }),
-			),
+			draft: Type.Optional(Type.Boolean()),
 			state: Type.Optional(StringEnum(["open", "closed", "all"] as const)),
 			page: Type.Optional(Type.Integer({ minimum: 1 })),
 			limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
@@ -487,6 +513,59 @@ export function registerPullTool(
 			const pullsPath = apiPath("repos", repo.owner, repo.repo, "pulls");
 			const requestOptions = signal === undefined ? {} : { signal };
 
+			if (params.refs !== undefined) {
+				if (params.ref !== undefined)
+					throw new Error("provide ref or refs, not both");
+				if (params.action === "get")
+					return batchGetPulls(
+						runtime,
+						params.refs,
+						signal,
+						params.max_bytes ?? DEFAULT_MODEL_OUTPUT_BYTES,
+					);
+				if (params.action === "update") {
+					const patch: Record<string, unknown> = {};
+					if (params.title !== undefined) patch.title = params.title;
+					if (params.body !== undefined) patch.body = params.body;
+					if (params.base !== undefined) patch.base = params.base;
+					if (Object.keys(patch).length === 0)
+						throw new Error("update requires title, body, or base");
+					return batchPatchPulls(
+						runtime,
+						params.refs,
+						patch,
+						{ verb: "Updated" },
+						signal,
+					);
+				}
+				if (params.action === "close") {
+					await confirmMutation(runtime, ctx, {
+						signal,
+						approval: "pull.close",
+						title: `Close ${params.refs.length} Forgejo pull requests`,
+						message: params.refs
+							.map((reference) => `- ${reference}`)
+							.join("\n"),
+					});
+					return batchPatchPulls(
+						runtime,
+						params.refs,
+						{ state: "closed" },
+						{ verb: "Closed", requireState: "closed" },
+						signal,
+					);
+				}
+				if (params.action === "reopen")
+					return batchPatchPulls(
+						runtime,
+						params.refs,
+						{ state: "open" },
+						{ verb: "Reopened", requireState: "open" },
+						signal,
+					);
+				throw new Error("refs[] supports get, update, close, and reopen");
+			}
+
 			if (params.action === "list") {
 				const response = await client.request<Array<ForgejoPullRequest | null>>(
 					pullsPath,
@@ -516,6 +595,21 @@ export function registerPullTool(
 						items: pulls,
 					},
 				);
+			}
+
+			if (params.prs !== undefined) {
+				if (params.action !== "create")
+					throw new Error("prs[] is only valid with action=create");
+				if (
+					params.title !== undefined ||
+					params.head !== undefined ||
+					params.base !== undefined ||
+					params.body !== undefined
+				)
+					throw new Error(
+						"provide prs[] or single title/head/base/body, not both",
+					);
+				return batchCreatePulls(runtime, repo, params.prs, signal);
 			}
 
 			if (params.action === "create") {

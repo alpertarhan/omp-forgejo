@@ -2,6 +2,7 @@ import { listActionRuns } from "./actions.js";
 import { apiPath, ForgejoError, type ForgejoClient } from "./client.js";
 import { queryAttentionItems, type AttentionTarget } from "./dashboard/query.js";
 import { formatResourceRef } from "./refs.js";
+import { WatchScheduler } from "./watch-scheduler.js";
 import type { WatchErrorMetadata } from "./watch.js";
 import type {
 	DashboardItem,
@@ -50,6 +51,7 @@ export interface SourceWatch {
 	matchedAt?: string;
 	matchedEvents?: SourceWatchEvent[];
 	matchedTotal?: number;
+	degradedServers?: string[];
 }
 
 export type SourceWatchEmission =
@@ -69,6 +71,7 @@ interface SourceWatchEmissionBase {
 	source: "ci" | "attention";
 	reference: string;
 	target?: AttentionTarget;
+	servers?: ServerAlias[];
 	attention: SourceWatchAttention;
 	note?: string;
 }
@@ -94,6 +97,11 @@ export interface ArmAttentionWatchOptions {
 
 type ArmOptions = ArmCIWatchOptions | ArmAttentionWatchOptions;
 
+interface PollOutcome {
+	events: SourceWatchEvent[];
+	degradedError?: unknown;
+}
+
 interface ActiveSourceWatch extends SourceWatch {
 	key: string;
 	nextPollTime?: number;
@@ -111,6 +119,8 @@ interface ActiveSourceWatch extends SourceWatch {
 	// Attention watches
 	targetServers?: ServerAlias[];
 	seenKeys: Set<string>;
+	degraded: Set<ServerAlias>;
+	unbased: Set<ServerAlias>;
 }
 
 const DEFAULT_POLL_MS = 60_000;
@@ -122,6 +132,7 @@ const MAX_HISTORY = 50;
 const MAX_EMITTED_EVENTS = 20;
 const DEFAULT_PREVIEW_LIMIT = 25;
 const MAX_RUNS_PER_POLL = 50;
+const MAX_RUN_PAGES = 3;
 const TERMINAL_RUN_STATUSES = new Set([
 	"success",
 	"failure",
@@ -190,10 +201,6 @@ function positive(
 	return result;
 }
 
-function unref(timer: ReturnType<typeof setTimeout>): void {
-	if (typeof timer === "object" && "unref" in timer) timer.unref();
-}
-
 function safeError(error: unknown): WatchErrorMetadata {
 	if (!(error instanceof ForgejoError)) return { code: "internal" };
 	return {
@@ -255,20 +262,51 @@ function ciEvent(
 	return event;
 }
 
+async function fetchRunPages(
+	client: ForgejoClient,
+	repo: { server: string; owner: string; repo: string },
+	headSha: string,
+	signal: AbortSignal | undefined,
+): Promise<ForgejoActionRun[]> {
+	const runs: ForgejoActionRun[] = [];
+	for (let page = 1; page <= MAX_RUN_PAGES; page += 1) {
+		const result = await listActionRuns(
+			client,
+			repo,
+			{ headSha, page, limit: MAX_RUNS_PER_POLL },
+			signal,
+		);
+		runs.push(...result.runs);
+		if (result.runs.length < MAX_RUNS_PER_POLL) break;
+	}
+	return runs;
+}
+
 export class SourceWatchManager {
 	private readonly watches = new Map<string, ActiveSourceWatch>();
 	private nextId = 1;
-	private timer: ReturnType<typeof setTimeout> | undefined;
-	private closed = false;
+	private readonly clientFor: (server: string) => ForgejoClient;
+	private readonly aliasesFor: () => ServerAlias[];
+	private readonly emit: (emission: SourceWatchEmission) => void;
+	private readonly scheduler: WatchScheduler<ActiveSourceWatch>;
 
 	constructor(
-		private readonly clientFor: (server: string) => ForgejoClient,
-		private readonly aliasesFor: () => ServerAlias[],
-		private readonly emit: (emission: SourceWatchEmission) => void,
-	) {}
+		clientFor: (server: string) => ForgejoClient,
+		aliasesFor: () => ServerAlias[],
+		emit: (emission: SourceWatchEmission) => void,
+	) {
+		this.clientFor = clientFor;
+		this.aliasesFor = aliasesFor;
+		this.emit = emit;
+		this.scheduler = new WatchScheduler(
+			() => this.watches.values(),
+			(watch) => this.poll(watch),
+			(watch) => this.finishTimeout(watch),
+		);
+	}
 
 	async arm(options: ArmOptions): Promise<SourceWatch> {
-		if (this.closed) throw new Error("watch manager is closed");
+		if (this.scheduler.closed) throw new Error("watch manager is closed");
 		if ("target" in options) return this.armAttention(options);
 		return this.armCI(options);
 	}
@@ -285,16 +323,16 @@ export class SourceWatchManager {
 		delete watch.nextPollAt;
 		watch.seenKeys.clear();
 		watch.runStatuses.clear();
+		// degraded/unbased sets stay for list() reporting; they are bounded by
+		// the server count and die with the watch.
 		watch.controller.abort();
 		this.prune();
-		this.schedule();
+		this.scheduler.schedule();
 		return true;
 	}
 
 	close(): void {
-		this.closed = true;
-		if (this.timer !== undefined) clearTimeout(this.timer);
-		this.timer = undefined;
+		this.scheduler.close();
 		for (const watch of this.watches.values()) {
 			if (watch.state === "active") watch.state = "stopped";
 			watch.controller.abort();
@@ -331,19 +369,20 @@ export class SourceWatchManager {
 		const headSha = current.data.head?.sha ?? "";
 		const runStatuses = new Map<number, string>();
 		if (headSha) {
-			const baseline = await listActionRuns(
+			for (const run of await fetchRunPages(
 				client,
 				{
 					server: options.ref.server,
 					owner: options.ref.owner,
 					repo: options.ref.repo,
 				},
-				{ headSha, page: 1, limit: MAX_RUNS_PER_POLL },
+				headSha,
 				options.signal,
-			);
-			for (const run of baseline.runs) runStatuses.set(run.id, run.status);
+			))
+				runStatuses.set(run.id, run.status);
 		}
-		if (this.closed) throw new Error("watch manager is closed");
+		if (this.scheduler.closed)
+			throw new Error("watch manager is closed");
 		const raced = this.activeByKey(key);
 		if (raced) return this.publicInfo(raced);
 		this.assertCapacity();
@@ -364,7 +403,7 @@ export class SourceWatchManager {
 			runStatuses,
 		});
 		this.watches.set(watch.id, watch);
-		this.schedule();
+		this.scheduler.schedule();
 		return this.publicInfo(watch);
 	}
 
@@ -392,20 +431,31 @@ export class SourceWatchManager {
 		if (duplicate) return this.publicInfo(duplicate);
 		this.assertCapacity();
 
-		const baselineItems = (
-			await Promise.all(
-				servers.map((alias) =>
-					queryAttentionItems(
-						this.clientFor(alias),
-						options.target,
-						DEFAULT_PREVIEW_LIMIT,
-						options.signal ?? undefined,
-					),
+		const settled = await Promise.allSettled(
+			servers.map((alias) =>
+				queryAttentionItems(
+					this.clientFor(alias),
+					options.target,
+					DEFAULT_PREVIEW_LIMIT,
+					options.signal,
 				),
-			)
-		).flat();
-		if (this.closed) throw new Error("watch manager is closed");
+			),
+		);
+		if (this.scheduler.closed)
+			throw new Error("watch manager is closed");
 		if (options.signal?.aborted) throw new Error("watch arm was aborted");
+		if (settled.every((result) => result.status === "rejected"))
+			throw (settled[0] as PromiseRejectedResult).reason;
+		const baselineItems = settled.flatMap((result) =>
+			result.status === "fulfilled" ? result.value : [],
+		);
+		const unreachable = new Set(
+			settled
+				.map((result, index) =>
+					result.status === "rejected" ? servers[index] : undefined,
+				)
+				.filter((alias): alias is ServerAlias => alias !== undefined),
+		);
 		const raced = this.activeByKey(key);
 		if (raced) return this.publicInfo(raced);
 		this.assertCapacity();
@@ -419,9 +469,11 @@ export class SourceWatchManager {
 			target: options.target,
 			targetServers: [...servers],
 			seenKeys,
+			degraded: unreachable,
+			unbased: new Set(unreachable),
 		});
 		this.watches.set(watch.id, watch);
-		this.schedule();
+		this.scheduler.schedule();
 		return this.publicInfo(watch);
 	}
 
@@ -497,6 +549,8 @@ export class SourceWatchManager {
 				: { lastHeadSha: details.lastHeadSha }),
 			runStatuses: details.runStatuses ?? new Map(),
 			seenKeys: details.seenKeys ?? new Set(),
+			degraded: details.degraded ?? new Set(),
+			unbased: details.unbased ?? new Set(),
 			...(details.target === undefined ? {} : { target: details.target }),
 			...(details.targetServers === undefined
 				? {}
@@ -521,54 +575,6 @@ export class SourceWatchManager {
 			throw new Error(`at most ${MAX_ACTIVE} active source watches are allowed`);
 	}
 
-	private schedule(): void {
-		if (this.timer !== undefined) clearTimeout(this.timer);
-		this.timer = undefined;
-		if (this.closed) return;
-		let due: number | undefined;
-		for (const watch of this.watches.values()) {
-			if (watch.state !== "active") continue;
-			if (watch.expiresTime !== undefined && !watch.expiryPolled)
-				due = Math.min(due ?? watch.expiresTime, watch.expiresTime);
-			if (!watch.inFlight && watch.nextPollTime !== undefined)
-				due = Math.min(due ?? watch.nextPollTime, watch.nextPollTime);
-		}
-		if (due === undefined) return;
-		this.timer = setTimeout(() => this.tick(), Math.max(0, due - Date.now()));
-		unref(this.timer);
-	}
-
-	private tick(): void {
-		this.timer = undefined;
-		const now = Date.now();
-		for (const watch of this.watches.values()) {
-			if (watch.state !== "active" || watch.expiryPolled) continue;
-			if (watch.expiresTime !== undefined && watch.expiresTime <= now) {
-				if (watch.inFlight) {
-					this.finishTimeout(watch);
-					continue;
-				}
-				watch.expiryPolled = true;
-				watch.inFlight = true;
-				delete watch.nextPollTime;
-				delete watch.nextPollAt;
-				void this.poll(watch);
-				continue;
-			}
-			if (
-				!watch.inFlight &&
-				watch.nextPollTime !== undefined &&
-				watch.nextPollTime <= now
-			) {
-				watch.inFlight = true;
-				delete watch.nextPollTime;
-				delete watch.nextPollAt;
-				void this.poll(watch);
-			}
-		}
-		this.schedule();
-	}
-
 	private async poll(watch: ActiveSourceWatch): Promise<void> {
 		const pollController = new AbortController();
 		const abortPoll = (): void =>
@@ -579,14 +585,16 @@ export class SourceWatchManager {
 				once: true,
 			});
 		try {
-			const events =
+			const outcome =
 				watch.source === "ci"
 					? await this.pollCI(watch, pollController.signal)
 					: await this.pollAttention(watch, pollController.signal);
 			if (watch.state !== "active") return;
 			watch.failures = 0;
-			delete watch.lastError;
-			if (events.length > 0) this.finishMatched(watch, events);
+			if (outcome.degradedError !== undefined)
+				watch.lastError = safeError(outcome.degradedError);
+			else delete watch.lastError;
+			if (outcome.events.length > 0) this.finishMatched(watch, outcome.events);
 			else if (this.expired(watch)) this.finishTimeout(watch);
 			else this.nextPoll(watch, watch.pollIntervalMs);
 		} catch (error) {
@@ -609,32 +617,32 @@ export class SourceWatchManager {
 			watch.controller.signal.removeEventListener("abort", abortPoll);
 			pollController.abort();
 			watch.inFlight = false;
-			this.schedule();
+			this.scheduler.schedule();
 		}
 	}
 
 	private async pollCI(
 		watch: ActiveSourceWatch,
 		signal: AbortSignal,
-	): Promise<SourceWatchEvent[]> {
+	): Promise<PollOutcome> {
 		const current = await watch.client!.request<ForgejoPullRequest>(
 			watch.currentPath!,
 			{ signal },
 		);
 		const headSha = current.data.head?.sha ?? "";
-		if (!headSha) return [];
+		if (!headSha) return { events: [] };
 		if (headSha !== watch.lastHeadSha) {
 			watch.lastHeadSha = headSha;
 			watch.runStatuses.clear();
 		}
-		const page = await listActionRuns(
+		const runs = await fetchRunPages(
 			watch.client!,
 			watch.repo!,
-			{ headSha, page: 1, limit: MAX_RUNS_PER_POLL },
+			headSha,
 			signal,
 		);
 		const events: SourceWatchEvent[] = [];
-		for (const run of page.runs) {
+		for (const run of runs) {
 			const previous = watch.runStatuses.get(run.id);
 			if (previous === run.status) continue;
 			watch.runStatuses.set(run.id, run.status);
@@ -647,32 +655,60 @@ export class SourceWatchManager {
 				events.push(ciEvent(watch.reference, run));
 			}
 		}
-		return events;
+		return { events };
 	}
 
 	private async pollAttention(
 		watch: ActiveSourceWatch,
 		signal: AbortSignal,
-	): Promise<SourceWatchEvent[]> {
-		const items = (
-			await Promise.all(
-				watch.targetServers!.map((alias) =>
-					queryAttentionItems(
-						this.clientFor(alias),
-						watch.target!,
-						watch.previewLimit,
-						signal,
-					),
+	): Promise<PollOutcome> {
+		const servers = watch.targetServers ?? [];
+		const settled = await Promise.allSettled(
+			servers.map((alias) =>
+				queryAttentionItems(
+					this.clientFor(alias),
+					watch.target!,
+					watch.previewLimit,
+					signal,
 				),
-			)
-		).flat();
+			),
+		);
 		const events: SourceWatchEvent[] = [];
-		for (const item of items) {
-			if (watch.seenKeys.has(item.key)) continue;
-			watch.seenKeys.add(item.key);
-			events.push(attentionEvent(item));
-		}
-		return events;
+		let degradedError: unknown;
+		let sawDegraded = false;
+		let degradedCount = 0;
+		settled.forEach((result, index) => {
+			const alias = servers[index];
+			if (alias === undefined) return;
+			if (result.status === "rejected") {
+				degradedCount += 1;
+				if (!sawDegraded) {
+					sawDegraded = true;
+					degradedError = result.reason;
+				}
+				watch.degraded.add(alias);
+				return;
+			}
+			watch.degraded.delete(alias);
+			if (watch.unbased.has(alias)) {
+				// First success after being unreachable at arm: absorb the
+				// server's current items as a silent baseline so recovery
+				// cannot flood the agent with pre-arm review requests.
+				watch.unbased.delete(alias);
+				for (const item of result.value) watch.seenKeys.add(item.key);
+				return;
+			}
+			for (const item of result.value) {
+				if (watch.seenKeys.has(item.key)) continue;
+				watch.seenKeys.add(item.key);
+				events.push(attentionEvent(item));
+			}
+		});
+		if (degradedCount === settled.length) throw degradedError;
+		return {
+			events,
+			...(sawDegraded ? { degradedError } : {}),
+		};
 	}
 
 	private expired(watch: ActiveSourceWatch): boolean {
@@ -700,6 +736,9 @@ export class SourceWatchManager {
 				source: watch.source,
 				reference: watch.reference,
 				...(watch.target === undefined ? {} : { target: watch.target }),
+				...(watch.targetServers === undefined
+					? {}
+					: { servers: [...watch.targetServers].sort() }),
 				attention: watch.attention,
 				...(watch.note === undefined ? {} : { note: watch.note }),
 				kind: "matched",
@@ -719,6 +758,9 @@ export class SourceWatchManager {
 				source: watch.source,
 				reference: watch.reference,
 				...(watch.target === undefined ? {} : { target: watch.target }),
+				...(watch.targetServers === undefined
+					? {}
+					: { servers: [...watch.targetServers].sort() }),
 				attention: watch.attention,
 				...(watch.note === undefined ? {} : { note: watch.note }),
 				kind: "timed-out",
@@ -740,6 +782,9 @@ export class SourceWatchManager {
 				source: watch.source,
 				reference: watch.reference,
 				...(watch.target === undefined ? {} : { target: watch.target }),
+				...(watch.targetServers === undefined
+					? {}
+					: { servers: [...watch.targetServers].sort() }),
 				attention: watch.attention,
 				...(watch.note === undefined ? {} : { note: watch.note }),
 				kind: "failed",
@@ -797,7 +842,8 @@ export class SourceWatchManager {
 			expiresAt,
 			failures,
 			lastError,
-			deliveryFailed,
+		deliveryFailed,
+		degraded,
 			matchedAt,
 			matchedEvents,
 			matchedTotal,
@@ -818,7 +864,10 @@ export class SourceWatchManager {
 			...(nextPollAt === undefined ? {} : { nextPollAt }),
 			...(expiresAt === undefined ? {} : { expiresAt }),
 			...(lastError === undefined ? {} : { lastError }),
-			...(deliveryFailed === undefined ? {} : { deliveryFailed }),
+		...(deliveryFailed === undefined ? {} : { deliveryFailed }),
+		...(degraded !== undefined && degraded.size > 0
+			? { degradedServers: [...degraded].sort() }
+			: {}),
 			...(matchedAt === undefined ? {} : { matchedAt }),
 			...(matchedEvents === undefined
 				? {}

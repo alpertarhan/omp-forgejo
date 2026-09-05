@@ -52,6 +52,21 @@ const DOMAIN_TOOL_NAMES = {
 	watch: ["forgejo_watch"],
 } as const satisfies Record<ForgejoToolDomain, readonly string[]>;
 
+const DOMAIN_ACTIONS: Record<ForgejoToolDomain, string> = {
+	issue:
+		"get,list,timeline,updates,create,update,comment,labels,assignees,milestone,due_date,close,reopen; refs[] batches get/update/close/reopen",
+	pull:
+		"get,list,timeline,updates,files,diff,commits,checks,create,update,labels,assignees,milestone,reviewers,draft,close,reopen,readiness,merge; refs[] batches, prs[] batch create",
+	review: "draft,preview,submit against a pull ref",
+	actions: "list,get,jobs,job_log,dispatch,cancel,rerun,artifacts,download",
+	notifications: "list,get,mark_read,mark_unread,mark_all_read",
+	search: "issues,pulls,repositories,users",
+	dashboard:
+		"get,refresh,get_attention_items,get_assigned_issues,get_authored_pulls,get_review_requests,get_failed_runs",
+	watch:
+		"start,list,stop; events=timeline filters|[ci]; target=review_requests|notifications",
+};
+
 interface ForgejoToolController {
 	reset(): void;
 }
@@ -128,10 +143,14 @@ export function registerForgejoTools(
 			const activeSet = new Set(active);
 			const added = selected.filter((name) => !activeSet.has(name));
 			if (added.length > 0) pi.setActiveTools([...active, ...added]);
+			const cheatsheet = [...new Set(requested)]
+				.map((domain) => `${domain}: ${DOMAIN_ACTIONS[domain]}`)
+				.join("\n");
 			return toolResult(
-				added.length > 0
+				(added.length > 0
 					? `Enabled Forgejo tools: ${added.join(", ")}`
-					: `Requested Forgejo tools already active: ${selected.join(", ")}`,
+					: `Requested Forgejo tools already active: ${selected.join(", ")}`) +
+					`\n${cheatsheet}`,
 				{ requested, selected, added },
 			);
 		},

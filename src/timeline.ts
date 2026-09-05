@@ -16,6 +16,7 @@ export interface TimelineScan {
 	total?: number;
 	complete: boolean;
 	fetchedThrough: string;
+	serverTimestamp?: string;
 }
 
 function requestOptions(signal: AbortSignal | undefined): {
@@ -73,12 +74,15 @@ export async function scanTimeline(
 	let total: number | undefined;
 	let complete = false;
 	let pages = 0;
+	let serverTimestamp: string | undefined;
 	for (let page = 1; page <= maxPages; page += 1) {
 		const response = await client.request<ForgejoTimelineEvent[]>(path, {
 			...requestOptions(signal),
 			query: { page, limit: pageLimit, since, before },
 		});
 		pages = page;
+		if (page === 1)
+			serverTimestamp = responseTimestamp(response.headers) ?? serverTimestamp;
 		if (response.totalCount !== undefined) total = response.totalCount;
 		// Forgejo marshals an empty timeline as JSON null (Go nil slice), not []
 		const pageEvents = response.data ?? [];
@@ -99,6 +103,7 @@ export async function scanTimeline(
 		pages,
 		complete,
 		fetchedThrough: before,
+		...(serverTimestamp === undefined ? {} : { serverTimestamp }),
 	};
 	if (total !== undefined) result.total = total;
 	return result;

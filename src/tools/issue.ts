@@ -1,4 +1,9 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import {
+	batchGetIssues,
+	batchPatchIssues,
+	MAX_BATCH_REFS,
+} from "./batch.js";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { apiPath } from "../client.js";
@@ -114,6 +119,13 @@ export function registerIssueTool(
 				"reopen",
 			] as const),
 			...resourceTargetProperties,
+			refs: Type.Optional(
+				Type.Array(Type.String(), {
+					minItems: 1,
+					maxItems: MAX_BATCH_REFS,
+					description: "Batch get/update/close/reopen",
+				}),
+			),
 			title: Type.Optional(Type.String()),
 			body: Type.Optional(Type.String()),
 			comment_id: Type.Optional(Type.Integer({ minimum: 1 })),
@@ -146,6 +158,59 @@ export function registerIssueTool(
 		}),
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			const runtime = runtimeProvider();
+			if (params.refs !== undefined) {
+				if (params.ref !== undefined)
+					throw new Error("provide ref or refs, not both");
+				if (params.action === "get")
+					return batchGetIssues(
+						runtime,
+						params.refs,
+						signal,
+						params.max_bytes ?? DEFAULT_MODEL_OUTPUT_BYTES,
+					);
+				if (params.action === "update") {
+					const patch: Record<string, unknown> = {};
+					if (params.title !== undefined) patch.title = params.title;
+					if (params.body !== undefined) patch.body = params.body;
+					if (params.state !== undefined && params.state !== "all")
+						patch.state = params.state;
+					if (Object.keys(patch).length === 0)
+						throw new Error("update requires title, body, or state");
+					return batchPatchIssues(
+						runtime,
+						params.refs,
+						patch,
+						{ verb: "Updated" },
+						signal,
+					);
+				}
+				if (params.action === "close") {
+					await confirmMutation(runtime, ctx, {
+						signal,
+						approval: "issue.close",
+						title: `Close ${params.refs.length} Forgejo issues`,
+						message: params.refs
+							.map((reference) => `- ${reference}`)
+							.join("\n"),
+					});
+					return batchPatchIssues(
+						runtime,
+						params.refs,
+						{ state: "closed" },
+						{ verb: "Closed", requireState: "closed" },
+						signal,
+					);
+				}
+				if (params.action === "reopen")
+					return batchPatchIssues(
+						runtime,
+						params.refs,
+						{ state: "open" },
+						{ verb: "Reopened", requireState: "open" },
+						signal,
+					);
+				throw new Error("refs[] supports get, update, close, and reopen");
+			}
 			const repo = runtime.resolveRepo(params);
 			const client = runtime.client(repo.server);
 			const basePath = apiPath("repos", repo.owner, repo.repo, "issues");

@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import type {
 	ExtensionAPI,
 	ExtensionContext,
@@ -27,6 +28,17 @@ export function dashboardStartsAutomatically(
 	status: RepoResolution["status"],
 ): boolean {
 	return enabled && status !== "none";
+}
+
+export function forgejoToolkitActive(
+	serverCount: number,
+	status: RepoResolution["status"],
+): boolean {
+	return serverCount > 0 && status !== "none";
+}
+
+export function forgejoSkillPaths(): string[] {
+	return [fileURLToPath(new URL("../skills", import.meta.url))];
 }
 
 function parseHttpUrl(url: string): URL {
@@ -83,6 +95,8 @@ async function openExternal(
 
 export default function forgejoExtension(pi: ExtensionAPI): void {
 	let runtime: ForgejoRuntime | undefined;
+	let forgejoActive = false;
+	let toolkitDeactivatedByUs = false;
 	let watchManager: WatchManager | undefined;
 	let sourceWatchManager: SourceWatchManager | undefined;
 	let startupError: Error | undefined;
@@ -435,8 +449,14 @@ export default function forgejoExtension(pi: ExtensionAPI): void {
 		},
 	});
 
+	pi.on("resources_discover", () => {
+		if (!forgejoActive) return {};
+		return { skillPaths: forgejoSkillPaths() };
+	});
+
 	pi.on("session_start", async (_event, ctx) => {
 		forgejoTools.reset();
+		forgejoActive = false;
 		cleanup();
 		startupError = undefined;
 		try {
@@ -451,6 +471,41 @@ export default function forgejoExtension(pi: ExtensionAPI): void {
 			startupError = error instanceof Error ? error : new Error(String(error));
 			if (ctx.hasUI) ctx.ui.notify(startupError.message, "warning");
 			return;
+		}
+		forgejoActive = forgejoToolkitActive(
+			runtime.clients.aliases().length,
+			runtime.repoResolution.status,
+		);
+		if (!forgejoActive) {
+			// Outside a Forgejo repository the toolkit stays entirely out of
+			// the model context: no tools, no skills, no prompts.
+			if (
+				typeof pi.getActiveTools === "function" &&
+				typeof pi.setActiveTools === "function"
+			) {
+				pi.setActiveTools(
+					pi
+						.getActiveTools()
+						.filter((name) => !name.startsWith("forgejo_")),
+				);
+				toolkitDeactivatedByUs = true;
+			}
+			if (ctx.mode === "tui") syncDashboardActivity(ctx, false);
+			return;
+		}
+		if (
+			toolkitDeactivatedByUs &&
+			typeof pi.getActiveTools === "function" &&
+			typeof pi.setActiveTools === "function"
+		) {
+			// A resumed session in a Forgejo repository restores the bootstrap
+			// tools this extension removed earlier.
+			const active = pi.getActiveTools();
+			const missing = ["forgejo_context", "forgejo_tools"].filter(
+				(name) => !active.includes(name),
+			);
+			if (missing.length > 0) pi.setActiveTools([...active, ...missing]);
+			toolkitDeactivatedByUs = false;
 		}
 		const currentManager = new WatchManager(
 			(server) => requireRuntime().client(server),

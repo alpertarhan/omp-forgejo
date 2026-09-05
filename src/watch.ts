@@ -1,5 +1,6 @@
 import { apiPath, ForgejoError, type ForgejoClient } from "./client.js";
 import { formatResourceRef } from "./refs.js";
+import { WatchScheduler } from "./watch-scheduler.js";
 import {
 	newTimelineEvents,
 	nextTimelineCursor,
@@ -132,6 +133,7 @@ interface ActiveWatch extends EventWatch {
 	serverClockOffsetMs: number;
 	pageLimit: number;
 	maxPages: number;
+	incompleteScans: number;
 	nextPollTime?: number;
 	expiresTime?: number;
 	expiryPolled: boolean;
@@ -211,10 +213,6 @@ function safeNote(note: string): string {
 		.replace(/[\u0000-\u001f\u007f]/g, " ")
 		.replace(/\s+/g, " ")
 		.trim();
-}
-
-function unref(timer: ReturnType<typeof setTimeout>): void {
-	if (typeof timer === "object" && "unref" in timer) timer.unref();
 }
 
 function eventMatches(
@@ -300,16 +298,22 @@ function resourcePaths(ref: ResourceRef): {
 export class WatchManager {
 	private readonly watches = new Map<string, ActiveWatch>();
 	private nextId = 1;
-	private timer: ReturnType<typeof setTimeout> | undefined;
-	private closed = false;
+	private readonly clientFor: ClientProvider;
+	private readonly emit: WatchEmitter;
+	private readonly scheduler: WatchScheduler<ActiveWatch>;
 
-	constructor(
-		private readonly clientFor: ClientProvider,
-		private readonly emit: WatchEmitter,
-	) {}
+	constructor(clientFor: ClientProvider, emit: WatchEmitter) {
+		this.clientFor = clientFor;
+		this.emit = emit;
+		this.scheduler = new WatchScheduler(
+			() => this.watches.values(),
+			(watch) => this.poll(watch),
+			(watch) => this.finishTimeout(watch),
+		);
+	}
 
 	async arm(options: ArmWatchOptions): Promise<EventWatch> {
-		if (this.closed) throw new Error("watch manager is closed");
+		if (this.scheduler.closed) throw new Error("watch manager is closed");
 		const filters = normalizeFilters(options);
 		const pollIntervalMs = positive(
 			options.pollIntervalMs,
@@ -374,7 +378,14 @@ export class WatchManager {
 				? Promise.resolve(undefined)
 				: client
 						.request<ForgejoUser>("user", requestOptions)
-						.then((result) => result.data.login),
+						.then((result) => result.data.login)
+						.catch((error: unknown) => {
+							if (options.signal?.aborted) throw error;
+							throw new Error(
+								"include_self=false needs the authenticated user (GET /user); use a token with user scope or set include_self=true",
+								{ cause: error },
+							);
+						}),
 		]);
 		const serverTimestamp = responseTimestamp(currentResponse.headers);
 		const scanBefore = serverTimestamp ?? startedAt;
@@ -390,7 +401,7 @@ export class WatchManager {
 		);
 		if (!scan.complete)
 			throw new Error(`timeline baseline incomplete after ${maxPages} pages`);
-		if (this.closed) throw new Error("watch manager is closed");
+		if (this.scheduler.closed) throw new Error("watch manager is closed");
 
 		const racedDuplicate = this.activeByKey(key);
 		if (racedDuplicate) return this.publicInfo(racedDuplicate);
@@ -431,6 +442,7 @@ export class WatchManager {
 				: 0,
 			pageLimit,
 			maxPages,
+			incompleteScans: 0,
 			nextPollTime: now + pollIntervalMs,
 			...(timeoutMs === undefined ? {} : { expiresTime: now + timeoutMs }),
 			expiryPolled: false,
@@ -447,7 +459,7 @@ export class WatchManager {
 						...this.currentLevelMatches(watch.filters, current),
 					];
 		if (initial.length > 0) this.finishMatched(watch, initial, false);
-		else this.schedule();
+		else this.scheduler.schedule();
 		return this.publicInfo(watch);
 	}
 
@@ -464,14 +476,12 @@ export class WatchManager {
 		watch.cursor.eventVersions.clear();
 		watch.controller.abort();
 		this.prune();
-		this.schedule();
+		this.scheduler.schedule();
 		return true;
 	}
 
 	close(): void {
-		this.closed = true;
-		if (this.timer !== undefined) clearTimeout(this.timer);
-		this.timer = undefined;
+		this.scheduler.close();
 		for (const watch of this.watches.values()) {
 			if (watch.state === "active") watch.state = "stopped";
 			watch.controller.abort();
@@ -490,55 +500,6 @@ export class WatchManager {
 	private activeCount(): number {
 		return [...this.watches.values()].filter((watch) => watch.state === "active")
 			.length;
-	}
-
-	private schedule(): void {
-		if (this.timer !== undefined) clearTimeout(this.timer);
-		this.timer = undefined;
-		if (this.closed) return;
-		let due: number | undefined;
-		for (const watch of this.watches.values()) {
-			if (watch.state !== "active") continue;
-			if (watch.expiresTime !== undefined && !watch.expiryPolled)
-				due = Math.min(due ?? watch.expiresTime, watch.expiresTime);
-			if (!watch.inFlight && watch.nextPollTime !== undefined)
-				due = Math.min(due ?? watch.nextPollTime, watch.nextPollTime);
-		}
-		if (due === undefined) return;
-		this.timer = setTimeout(() => this.tick(), Math.max(0, due - Date.now()));
-		unref(this.timer);
-	}
-
-	private tick(): void {
-		this.timer = undefined;
-		const now = Date.now();
-		for (const watch of this.watches.values()) {
-			if (watch.state !== "active" || watch.expiryPolled) continue;
-			if (watch.expiresTime !== undefined && watch.expiresTime <= now) {
-				// A poll still running from before the deadline is aborted, but an
-				// idle watch gets one final poll whose result decides the outcome.
-				if (watch.inFlight) {
-					this.finishTimeout(watch);
-					continue;
-				}
-				watch.expiryPolled = true;
-				watch.inFlight = true;
-				delete watch.nextPollTime;
-				delete watch.nextPollAt;
-				void this.poll(watch);
-				continue;
-			} else if (
-				!watch.inFlight &&
-				watch.nextPollTime !== undefined &&
-				watch.nextPollTime <= now
-			) {
-				watch.inFlight = true;
-				delete watch.nextPollTime;
-				delete watch.nextPollAt;
-				void this.poll(watch);
-			}
-		}
-		this.schedule();
 	}
 
 	private async poll(watch: ActiveWatch): Promise<void> {
@@ -568,32 +529,69 @@ export class WatchManager {
 			if (serverTimestamp)
 				watch.serverClockOffsetMs = Date.parse(serverTimestamp) - Date.now();
 			const before = serverTimestamp ?? calibratedBefore;
-			const scan = await scanTimeline(
-				watch.client,
-				watch.timelinePath,
-				fetchSince,
-				before,
-				watch.pageLimit,
-				watch.maxPages,
-				pollController.signal,
+		const scaledPageLimit = Math.min(
+			watch.pageLimit * 2 ** watch.incompleteScans,
+			MAX_PAGE_LIMIT,
+		);
+		const scaledMaxPages = Math.min(
+			watch.maxPages * 2 ** watch.incompleteScans,
+			MAX_PAGES,
+		);
+		const scan = await scanTimeline(
+			watch.client,
+			watch.timelinePath,
+			fetchSince,
+			before,
+			scaledPageLimit,
+			scaledMaxPages,
+			pollController.signal,
+		);
+		if (watch.state !== "active") return;
+		if (!currentResponse && scan.serverTimestamp !== undefined)
+			watch.serverClockOffsetMs =
+				Date.parse(scan.serverTimestamp) - Date.now();
+		if (!scan.complete) {
+			// The fetched newest pages are still usable: version dedupe makes
+			// re-fetching them next poll cheap, and the frozen since bound
+			// keeps the older unfetched events reachable.
+			const partial = this.matchingEvents(
+				watch,
+				newTimelineEvents(scan.events, watch.cursor),
 			);
-			if (watch.state !== "active") return;
-			if (!scan.complete) {
-				if (this.expired(watch)) {
-					this.finishTimeout(watch);
-					return;
-				}
-				watch.failures += 1;
-				watch.lastError = safeError(undefined, true);
-				this.nextPoll(
-					watch,
-					Math.min(
-						watch.pollIntervalMs * 2 ** watch.failures,
-						MAX_BACKOFF_MS,
-					),
-				);
+			watch.cursor = nextTimelineCursor(
+				watch.cursor.fetchedThrough,
+				watch.cursor,
+				scan.events,
+			);
+			if (partial.length > 0) {
+				this.finishMatched(watch, partial, true);
 				return;
 			}
+			if (this.expired(watch)) {
+				this.finishTimeout(watch);
+				return;
+			}
+			if (
+				scaledPageLimit === MAX_PAGE_LIMIT &&
+				scaledMaxPages === MAX_PAGES
+			) {
+				// Capacity is already maximal and the window is still too
+				// large: surface the failure instead of live-locking.
+				this.finishFailure(watch, safeError(undefined, true));
+				return;
+			}
+			watch.incompleteScans += 1;
+			watch.failures += 1;
+			watch.lastError = safeError(undefined, true);
+			this.nextPoll(
+				watch,
+				Math.min(
+					watch.pollIntervalMs * 2 ** watch.failures,
+					MAX_BACKOFF_MS,
+				),
+			);
+			return;
+		}
 			const events = newTimelineEvents(scan.events, watch.cursor);
 			const timelineMatches = this.matchingEvents(watch, events);
 			const timelineTransitionTypes = new Set(
@@ -613,16 +611,17 @@ export class WatchManager {
 				: [];
 			const matches = [...timelineMatches, ...resourceMatches];
 			watch.cursor = nextTimelineCursor(
-				scan.fetchedThrough,
-				watch.cursor,
-				scan.events,
-			);
+				scan.serverTimestamp ?? scan.fetchedThrough,
+			watch.cursor,
+			scan.events,
+		);
 			if (currentResponse) {
 				watch.lastState = currentResponse.data.state;
 				watch.lastMerged =
 					"merged" in currentResponse.data && currentResponse.data.merged === true;
 			}
 			watch.failures = 0;
+			watch.incompleteScans = 0;
 			delete watch.lastError;
 			if (matches.length > 0) this.finishMatched(watch, matches, true);
 			else if (this.expired(watch)) this.finishTimeout(watch);
@@ -644,7 +643,7 @@ export class WatchManager {
 			watch.controller.signal.removeEventListener("abort", abortPoll);
 			pollController.abort();
 			watch.inFlight = false;
-			this.schedule();
+			this.scheduler.schedule();
 		}
 	}
 

@@ -253,8 +253,9 @@ export function registerWatchTool(
 			const ref = runtime.resolveResource({ ref: params.ref }, parsed.kind);
 
 			if (events.includes("ci")) {
+				rejectFields(params, ["since", "include_self"], "ci watch");
 				if (events.length > 1)
-					throw new Error(
+				throw new Error(
 						"ci cannot be combined with other events; start a separate timeline watch alongside it",
 					);
 				const existingIds = new Set(

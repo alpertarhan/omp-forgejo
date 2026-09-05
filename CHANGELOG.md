@@ -4,7 +4,27 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.7.0] - 2026-09-05
+
+### Added
+
+- `refs[]` batch operations: `forgejo_issue` and `forgejo_pull` `get`/`update`/`close`/`reopen` accept up to 10 qualified refs in one call (batch close confirms once with every ref enumerated); `forgejo_pull action=create` accepts `prs[]` to open up to 10 pull requests in one call.
+- `forgejo_tools` now replies with a per-domain action cheatsheet so the agent picks the right action on the first try.
+
+### Changed
+
+- The toolkit activates only in repositories whose Git remotes resolve to a configured Forgejo server: elsewhere its tools are removed from the active set and its skills are not contributed, keeping the model context free of Forgejo schemas, prompts, and skills. Skills now load through resource discovery instead of the package manifest.
+- The live Forgejo integration smoke test now covers cross-server attention degradation: arming with an unreachable server, waking from the healthy server, and `degradedServers` reporting.
+
+### Fixed
+
+- Cross-server attention watches no longer withhold healthy servers' wakes while another server is degraded; a server unreachable at arming is absorbed as a silent baseline on recovery, and `action=list` reports `degradedServers`.
+- An incomplete timeline scan now matches events from its fetched pages, grows its scan capacity adaptively, and fails the watch once maximal capacity is still incomplete instead of silently live-locking.
+- Timeline-only watches re-sync the server clock from the timeline response `Date` header each poll, so post-arm local clock drift cannot stretch the scan bound.
+- CI watches reject `since` and `include_self` instead of silently ignoring them, and observe Actions runs beyond the first page (up to 150 newest runs per head SHA).
+- Attention wake re-arm hints echo the original `servers` scope.
+- `include_self=false` reports an actionable error when the token cannot read the authenticated user.
+- The timeline and source watch managers share one scheduler implementation.
 
 ## [0.6.1] - 2026-09-04
 
@@ -146,7 +166,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `forgejo-issue-to-pr` and `forgejo-pr-review` workflow skills.
 - Environment-variable and `fgj` credential providers with redirect and secret-redaction protections.
 
-[Unreleased]: https://github.com/alpertarhan/pi-forgejo-toolkit/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/alpertarhan/pi-forgejo-toolkit/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/alpertarhan/pi-forgejo-toolkit/compare/v0.6.1...v0.7.0
 [0.4.0]: https://github.com/alpertarhan/pi-forgejo-toolkit/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/alpertarhan/pi-forgejo-toolkit/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/alpertarhan/pi-forgejo-toolkit/compare/v0.2.1...v0.2.2

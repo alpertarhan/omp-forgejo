@@ -193,6 +193,42 @@ describe("WatchManager", () => {
 		expect(manager.list()[0]).toMatchObject({ state: "matched" });
 	});
 
+	it("re-syncs the timeline clock each poll for timeline-only watches", async () => {
+		const timelineQueries: Array<{ since?: string; before?: string }> = [];
+		let timelineCall = 0;
+		const request = vi.fn(async (path: string, options?: RequestOptions) => {
+			if (path === "user") return result({ id: 1, login: "alice" });
+			if (path.endsWith("/timeline")) {
+				timelineCall += 1;
+				timelineQueries.push({ ...(options?.query as Record<string, string>) });
+				if (timelineCall === 2)
+					vi.setSystemTime(new Date(now).getTime() - 10 * 60_000);
+				return result(timelineCall === 1 ? [] : [event(9, "review")], {
+					date: now,
+				});
+			}
+			return result(current(), { date: now });
+		});
+		const manager = new WatchManager(
+			() => ({ request }) as unknown as ForgejoClient,
+			vi.fn(),
+		);
+		await manager.arm({ ref, filters: ["comment"], pollIntervalMs: 100 });
+
+		await vi.advanceTimersByTimeAsync(100);
+		await vi.advanceTimersByTimeAsync(1000);
+
+		expect(timelineQueries.length).toBeGreaterThanOrEqual(3);
+		const secondPoll = timelineQueries[2] as { since: string; before: string };
+		expect(Date.parse(secondPoll.since)).toBeGreaterThanOrEqual(
+			Date.parse(now) - 6_000,
+		);
+		expect(Date.parse(secondPoll.before)).toBeGreaterThan(
+			Date.parse(now) - 60_000,
+		);
+		manager.close();
+	});
+
 	it("advances a complete timeline only through the queried upper bound", async () => {
 		const { scanTimeline } = await import("../src/timeline.js");
 		const before = "2026-08-12T10:00:00.000Z";
@@ -741,7 +777,7 @@ describe("WatchManager", () => {
 		expect(vi.getTimerCount()).toBe(0);
 	});
 
-	it("backs off an incomplete poll scan instead of failing permanently", async () => {
+	it("matches events from an incomplete poll scan's fetched pages", async () => {
 		let timelineCalls = 0;
 		const request = vi.fn(async (path: string) => {
 			if (path === "user") return result({ id: 1, login: "alice" });
@@ -749,6 +785,45 @@ describe("WatchManager", () => {
 				timelineCalls += 1;
 				if (timelineCalls === 1) return result([]);
 				return result([event(100), event(101)], {
+					link: '<https://work.example/api/v1/repos/acme/app/issues/9/timeline?page=3&limit=2>; rel="next"',
+				});
+			}
+			return result(current());
+		});
+		const emissions: WatchEmission[] = [];
+		const manager = new WatchManager(
+			() => ({ request }) as unknown as ForgejoClient,
+			(value) => {
+				emissions.push(value);
+			},
+		);
+		await manager.arm({
+			ref,
+			filters: ["comment"],
+			pollIntervalMs: 100,
+			pageLimit: 2,
+			maxPages: 1,
+		});
+
+		await vi.advanceTimersByTimeAsync(100);
+
+		expect(manager.list()[0]).toMatchObject({
+			state: "matched",
+			matchedTotal: 2,
+		});
+		if (emissions[0]?.kind !== "matched") throw new Error("expected match");
+		expect(emissions[0].totalCount).toBe(2);
+		manager.close();
+	});
+
+	it("backs off an incomplete poll scan when fetched pages hold no match", async () => {
+		let timelineCalls = 0;
+		const request = vi.fn(async (path: string) => {
+			if (path === "user") return result({ id: 1, login: "alice" });
+			if (path.endsWith("/timeline")) {
+				timelineCalls += 1;
+				if (timelineCalls === 1) return result([]);
+				return result([event(100, "review"), event(101, "review")], {
 					link: '<https://work.example/api/v1/repos/acme/app/issues/9/timeline?page=3&limit=2>; rel="next"',
 				});
 			}
@@ -773,6 +848,44 @@ describe("WatchManager", () => {
 			failures: 1,
 			lastError: { code: "incomplete" },
 		});
+		manager.close();
+	});
+
+	it("fails an incomplete scan once capacity is already maximal", async () => {
+		let timelineCalls = 0;
+		const request = vi.fn(async (path: string) => {
+			if (path === "user") return result({ id: 1, login: "alice" });
+			if (path.endsWith("/timeline")) {
+				timelineCalls += 1;
+				if (timelineCalls === 1) return result([]);
+				return result([event(100, "review")], {
+					link: '<https://work.example/api/v1/repos/acme/app/issues/9/timeline?page=3&limit=100>; rel="next"',
+				});
+			}
+			return result(current());
+		});
+		const emissions: WatchEmission[] = [];
+		const manager = new WatchManager(
+			() => ({ request }) as unknown as ForgejoClient,
+			(value) => {
+				emissions.push(value);
+			},
+		);
+		await manager.arm({
+			ref,
+			filters: ["comment"],
+			pollIntervalMs: 100,
+			pageLimit: 100,
+			maxPages: 100,
+		});
+
+		await vi.advanceTimersByTimeAsync(100);
+
+		expect(manager.list()[0]).toMatchObject({
+			state: "failed",
+			lastError: { code: "incomplete" },
+		});
+		if (emissions[0]?.kind !== "failed") throw new Error("expected failure");
 		manager.close();
 	});
 

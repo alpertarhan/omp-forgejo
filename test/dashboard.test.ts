@@ -7,7 +7,11 @@ import {
 	renderDashboardStatus,
 	renderWidgetLines,
 } from "../src/dashboard/widget.js";
-import { dashboardStartsAutomatically } from "../src/extension.js";
+import {
+	dashboardStartsAutomatically,
+	forgejoSkillPaths,
+	forgejoToolkitActive,
+} from "../src/extension.js";
 
 function jsonResponse(data: unknown, total?: number): Response {
 	const headers = new Headers({ "content-type": "application/json" });
@@ -574,5 +578,20 @@ describe("DashboardStore", () => {
 		);
 		expect(wide[2]).toContain("Next: review work:acme/app!30");
 		store.close();
+	});
+});
+
+describe("Forgejo toolkit activation gating", () => {
+	it("activates only inside Forgejo repositories with configured servers", () => {
+		expect(forgejoToolkitActive(2, "resolved")).toBe(true);
+		expect(forgejoToolkitActive(1, "ambiguous")).toBe(true);
+		expect(forgejoToolkitActive(3, "none")).toBe(false);
+		expect(forgejoToolkitActive(0, "resolved")).toBe(false);
+	});
+
+	it("contributes the bundled skills directory through discovery", () => {
+		const paths = forgejoSkillPaths();
+		expect(paths).toHaveLength(1);
+		expect(paths[0]).toMatch(/skills$/);
 	});
 });

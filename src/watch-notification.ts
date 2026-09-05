@@ -238,7 +238,7 @@ export function formatSourceWatchNotification(emission: SourceWatchEmission): {
 			);
 		else if (emission.target !== undefined)
 			lines.push(
-				`Continue watching: forgejo_watch action=start target=${emission.target} attention=${emission.attention}`,
+				`Continue watching: forgejo_watch action=start target=${emission.target}${emission.servers === undefined ? "" : ` servers=${emission.servers.join(",")}`} attention=${emission.attention}`,
 			);
 	} else if (emission.kind === "failed") {
 		const code = safeToken(emission.error.code, "internal");

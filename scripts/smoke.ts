@@ -13,10 +13,14 @@ import { apiPath, ForgejoClient } from "../src/client.js";
 import type { CredentialProvider } from "../src/credentials.js";
 import { scanTimeline } from "../src/timeline.js";
 import { queryAttentionItems } from "../src/dashboard/query.js";
-import { SourceWatchManager } from "../src/source-watch.js";
+import {
+	SourceWatchManager,
+	type SourceWatchEmission,
+} from "../src/source-watch.js";
 import { WatchManager, type WatchEmission } from "../src/watch.js";
 
 type MatchedEmission = Extract<WatchEmission, { kind: "matched" }>;
+type MatchedSourceEmission = Extract<SourceWatchEmission, { kind: "matched" }>;
 import type {
 	ForgejoIssue,
 	ForgejoPullRequest,
@@ -47,6 +51,8 @@ const client = new ForgejoClient(
 	},
 	{ credentialProvider: staticToken },
 );
+const serverUrl = new URL(baseUrl);
+const serverHost = serverUrl.host;
 
 function step(message: string): void {
 	console.log(`smoke: ${message}`);
@@ -181,7 +187,7 @@ async function main(): Promise<void> {
 		`timeline scan returned ${scan.events.length} events`,
 	);
 
-	step("arming an attention watch and exercising its queries");
+	step("arming attention queries");
 	const sourceManager = new SourceWatchManager(
 		() => client,
 		() => ["smoke"],
@@ -206,8 +212,110 @@ async function main(): Promise<void> {
 	);
 	assert(Array.isArray(reviewRequests), "review request query returned a list");
 	assert(Array.isArray(notifications), "notification query returned a list");
-
 	sourceManager.close();
+
+	step("waking from a healthy server while a peer server is degraded");
+	// A second Forgejo user supplies the incoming notification; a ghost alias
+	// on a dead port proves that one degraded server cannot withhold another
+	// server's wake.
+	await client.request(apiPath("admin", "users"), {
+		method: "POST",
+		body: {
+			username: `peer-${suffix}`,
+			email: `peer-${suffix}@example.com`,
+			password: "peer-pass-1234",
+			must_change_password: false,
+		},
+	});
+	const peerName = `peer-${suffix}`;
+	const peerToken = await client.request<{ sha1: string }>(
+		apiPath("admin", "users", peerName, "tokens"),
+		{
+			method: "POST",
+			body: { name: `smoke-${suffix}`, scopes: ["write:repository", "write:issue"] },
+		},
+	);
+	const peerStaticToken: CredentialProvider = {
+		kind: "env",
+		getToken: async () => peerToken.data.sha1,
+		clear: () => undefined,
+	};
+	const peerClient = new ForgejoClient(
+		"peer",
+		{
+			baseUrl: serverUrl.href,
+			hostname: serverHost,
+			credentialProvider: "env",
+			remoteHosts: [],
+		},
+		{ credentialProvider: peerStaticToken },
+	);
+	const ghostClient = new ForgejoClient(
+		"ghost",
+		{
+			baseUrl: "http://127.0.0.1:9",
+			hostname: "127.0.0.1:9",
+			credentialProvider: "env",
+			remoteHosts: [],
+		},
+		{ credentialProvider: staticToken },
+	);
+	await client.request(
+		apiPath("repos", owner, repoName, "collaborators", peerName),
+		{ method: "PUT", body: { permission: "write" } },
+	);
+
+	let resolveAttention:
+		| ((emission: MatchedSourceEmission) => void)
+		| undefined;
+	const attentionMatched = new Promise<MatchedSourceEmission>((resolve) => {
+		resolveAttention = resolve;
+	});
+	const degradedManager = new SourceWatchManager(
+		(alias) =>
+			alias === "ghost" ? ghostClient : alias === "peer" ? peerClient : client,
+		() => ["smoke", "ghost"],
+		(emission) => {
+			if (emission.kind === "matched") resolveAttention?.(emission);
+		},
+	);
+	const degradedWatch = await degradedManager.arm({
+		target: "notifications",
+		servers: ["smoke", "ghost"],
+		pollIntervalMs: 2_000,
+		timeoutMs: 45_000,
+	});
+	assert(degradedWatch.state === "active", "attention watch armed");
+	assert(
+		(degradedWatch.degradedServers ?? []).includes("ghost"),
+		"arm tolerated the degraded ghost server",
+	);
+
+	await peerClient.request(
+		apiPath("repos", owner, repoName, "issues", resourceRef.index, "comments"),
+		{ method: "POST", body: { body: "peer comment for the degraded watch" } },
+	);
+	const attentionEmission = await Promise.race([
+		attentionMatched,
+		new Promise<never>((_, reject) =>
+			setTimeout(
+				() => reject(new Error("degraded attention watch did not wake in time")),
+				45_000,
+			),
+		),
+	]);
+	assert(
+		attentionEmission.events.some(
+			(event) => event.type === "notification" && event.reference !== undefined,
+		),
+		"healthy server woke the watch despite the degraded peer",
+	);
+	const degradedListed = degradedManager.list()[0];
+	assert(
+		(degradedListed?.degradedServers ?? []).includes("ghost"),
+		"list reports the degraded server",
+	);
+	degradedManager.close();
 	watchManager.close();
 
 	step("deleting the smoke repository");
