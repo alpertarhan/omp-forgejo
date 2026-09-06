@@ -13,6 +13,8 @@ import type {
 	ForgejoServerConfig,
 	NotificationLevel,
 	PrivacyMode,
+	ToolsConfig,
+	ToolMode,
 } from "./types.js";
 
 const DEFAULT_DASHBOARD: DashboardConfig = {
@@ -23,6 +25,8 @@ const DEFAULT_DASHBOARD: DashboardConfig = {
 	notifications: "important",
 	privacy: "full",
 };
+
+const DEFAULT_TOOLS: ToolsConfig = { mode: "full" };
 
 interface RawServerConfig {
 	baseUrl?: unknown;
@@ -37,6 +41,7 @@ interface RawServerConfig {
 interface RawConfig {
 	servers?: unknown;
 	dashboard?: unknown;
+	tools?: unknown;
 	allowedMutations?: unknown;
 }
 
@@ -298,6 +303,18 @@ function parseDashboard(
 	};
 }
 
+function parseTools(globalValue: unknown, projectValue: unknown): ToolsConfig {
+	const value = mergeObjects(globalValue, projectValue);
+	return {
+		mode: parseChoice<ToolMode>(
+			value.mode,
+			["full", "lite"],
+			"tools.mode",
+			DEFAULT_TOOLS.mode,
+		),
+	};
+}
+
 export function parseAllowedMutationKeys(
 	value: unknown,
 ): MutationApprovalKey[] {
@@ -354,6 +371,7 @@ export function parseConfig(
 	return {
 		servers,
 		dashboard: parseDashboard(globalConfig.dashboard, projectConfig.dashboard),
+		tools: parseTools(globalConfig.tools, projectConfig.tools),
 		// Deliberately global-only: a committed project config must never be able
 		// to pre-approve mutations (merge/close/dispatch) for everyone who clones.
 		...(allowedMutations.length > 0 ? { allowedMutations } : {}),

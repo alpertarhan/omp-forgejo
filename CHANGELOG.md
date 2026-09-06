@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `tools.mode` config (`full` default, `lite`) for context-conscious sessions: in lite mode `forgejo_tools` swaps domains instead of accumulating them, so the model context carries at most the latest activation's tool schemas.
+- `/fj-setup` now asks for the tool activation mode and preserves it when updating an existing configuration.
+
 ## [0.7.0] - 2026-09-05
 
 ### Added

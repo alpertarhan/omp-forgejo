@@ -39,7 +39,7 @@ Restart Pi or run `/reload`, then create a configuration:
 /fj-setup
 ```
 
-`/fj-setup` opens a native, guided TUI. It asks where to save the configuration, walks through every server and credential provider, configures dashboard preferences, then shows a final summary before writing. No JSON editing is required.
+`/fj-setup` opens a native, guided TUI. It asks where to save the configuration, walks through every server and credential provider, configures dashboard preferences and the tool activation mode, then shows a final summary before writing. No JSON editing is required.
 
 Alternative package sources:
 
@@ -122,6 +122,8 @@ Configuration is loaded from two locations:
 
 Set `PI_FORGEJO_CONFIG=/absolute/path/to/forgejo.json` to override the global path. Trusted project configuration can add or replace server aliases and override dashboard fields. Project-local configuration and Git/SSH repository discovery are ignored until Pi marks the project trusted; global configuration remains available.
 
+Set `tools.mode` to `lite` to bound the model context the toolkit's tools occupy. In lite mode the `forgejo_tools` loader swaps domains instead of accumulating them: activating a domain deactivates the other Forgejo domain tools, so the session carries at most the schemas of the latest activation. The default `full` mode keeps activated domains for the rest of the session.
+
 Inline plaintext token fields are rejected. Use the CLI-independent `env` provider with `tokenEnv`, or use the optional `fgj` provider.
 
 ### Optional: `fgj` credential store
@@ -147,6 +149,9 @@ Inline plaintext token fields are rejected. Use the CLI-independent `env` provid
     "previewLimit": 3,
     "notifications": "important",
     "privacy": "full"
+  },
+  "tools": {
+    "mode": "full"
   }
 }
 ```
@@ -247,6 +252,8 @@ The remote resolver understands HTTPS, `ssh://`, SCP-style SSH URLs, ports, `.gi
 The package registers ten model-callable tools. Users normally describe the desired operation instead of constructing JSON manually.
 
 By default, only `forgejo_context` and the compact `forgejo_tools` loader are active, and only in repositories whose Git remotes resolve to a configured Forgejo server; everywhere else the toolkit stays out of the model context entirely — no tools, no skills, no prompts. The loader activates at most four requested issue, pull, review, Actions, notification, search, dashboard, or watch domains per call, additively for the current session, and replies with a per-domain action cheatsheet so the next call uses the right action on the first try; a new session returns to the compact set. There is deliberately no "load everything" option. The bundled skills request only their required domains and are contributed through resource discovery, so they appear only where the toolkit is active. This keeps eight larger schemas out of Pi's initial context and avoids rebuilding the system prompt when a domain is activated, without delaying slash commands or the TUI dashboard.
+
+With `tools.mode` set to `lite` (see [Configuration](#configuration)), activation is a swap: each `forgejo_tools` call deactivates the Forgejo domain tools it did not select, so the session context never carries more than the latest activation's schemas.
 
 If you use only the raw tools and slash commands, omit the two workflow entries from every prompt with a package filter:
 

@@ -16,6 +16,7 @@ export interface ForgejoServerConfig {
 export type DashboardScope = "all" | "current";
 export type NotificationLevel = "off" | "important" | "all";
 export type PrivacyMode = "full" | "counts-only";
+export type ToolMode = "full" | "lite";
 
 export interface DashboardConfig {
   enabled: boolean;
@@ -29,8 +30,14 @@ export interface DashboardConfig {
 export interface ForgejoConfig {
   servers: Record<ServerAlias, ForgejoServerConfig>;
   dashboard: DashboardConfig;
+  /** Tool activation style; lite swaps domains instead of accumulating them. */
+  tools: ToolsConfig;
   /** Stable mutation keys approved for automatic execution (global config only). */
   allowedMutations?: readonly MutationApprovalKey[];
+}
+
+export interface ToolsConfig {
+  mode: ToolMode;
 }
 
 export interface RepoRef {

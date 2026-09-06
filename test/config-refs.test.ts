@@ -34,6 +34,18 @@ describe("Forgejo configuration", () => {
 			notifications: "important",
 			privacy: "full",
 		});
+		expect(config.tools).toEqual({ mode: "full" });
+	});
+
+	it("parses tools.mode lite and lets trusted projects override it", () => {
+		const config = parseConfig(BASE_CONFIG, {
+			tools: { mode: "lite" },
+		});
+		expect(config.tools.mode).toBe("lite");
+
+		expect(() =>
+			parseConfig(BASE_CONFIG, { tools: { mode: "turbo" } }),
+		).toThrow(ConfigError);
 	});
 
 	it("accepts explicit CLI-independent API tokens through the environment provider", () => {

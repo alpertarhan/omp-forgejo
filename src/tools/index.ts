@@ -76,6 +76,15 @@ function toolsForDomains(domains: readonly ForgejoToolDomain[]): string[] {
 	return [...new Set(selected)];
 }
 
+function liteToolMode(runtimeProvider: RuntimeProvider): boolean {
+	try {
+		return runtimeProvider().config.tools.mode === "lite";
+	} catch {
+		// Before session start there is no runtime; default to full behavior.
+		return false;
+	}
+}
+
 export function registerForgejoTools(
 	pi: ExtensionAPI,
 	runtimeProvider: RuntimeProvider,
@@ -134,6 +143,7 @@ export function registerForgejoTools(
 						requested: params.domains,
 						selected: [],
 						added: [],
+						removed: [],
 					},
 				);
 			}
@@ -142,16 +152,35 @@ export function registerForgejoTools(
 			const active = pi.getActiveTools();
 			const activeSet = new Set(active);
 			const added = selected.filter((name) => !activeSet.has(name));
-			if (added.length > 0) pi.setActiveTools([...active, ...added]);
+			// Lite mode swaps domains instead of accumulating them so the session
+			// context carries at most the latest activation's schemas.
+			const removed = liteToolMode(runtimeProvider)
+				? active.filter(
+						(name) =>
+							LAZY_FORGEJO_TOOLS.has(name) && !selected.includes(name),
+					)
+				: [];
+			if (added.length > 0 || removed.length > 0) {
+				const removedSet = new Set(removed);
+				pi.setActiveTools([
+					...active.filter((name) => !removedSet.has(name)),
+					...added,
+				]);
+			}
 			const cheatsheet = [...new Set(requested)]
 				.map((domain) => `${domain}: ${DOMAIN_ACTIONS[domain]}`)
 				.join("\n");
-			return toolResult(
-				(added.length > 0
+			const summary = [
+				added.length > 0
 					? `Enabled Forgejo tools: ${added.join(", ")}`
-					: `Requested Forgejo tools already active: ${selected.join(", ")}`) +
-					`\n${cheatsheet}`,
-				{ requested, selected, added },
+					: `Requested Forgejo tools already active: ${selected.join(", ")}`,
+				...(removed.length > 0
+					? [`Disabled Forgejo tools (lite mode): ${removed.join(", ")}`]
+					: []),
+			].join("\n");
+			return toolResult(
+				`${summary}\n${cheatsheet}`,
+				{ requested, selected, added, removed },
 			);
 		},
 	});
