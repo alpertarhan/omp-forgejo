@@ -216,6 +216,7 @@ export default function forgejoExtension(pi: ExtensionAPI): void {
 				scope: "Scope",
 				servers: "Servers",
 				dashboard: "Dashboard",
+				tools: "Tools",
 				review: "Review",
 			};
 			const updateProgress = (
@@ -228,7 +229,13 @@ export default function forgejoExtension(pi: ExtensionAPI): void {
 					`setup ${step}/${total} · ${labels[stage]}`,
 				);
 				if (ctx.mode === "tui") {
-					const stages: SetupStage[] = ["scope", "servers", "dashboard", "review"];
+					const stages: SetupStage[] = [
+						"scope",
+						"servers",
+						"dashboard",
+						"tools",
+						"review",
+					];
 					ctx.ui.setWidget("forgejo-setup", [
 						`Forgejo Setup  ${step}/${total}`,
 						stages

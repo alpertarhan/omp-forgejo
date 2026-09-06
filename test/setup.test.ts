@@ -146,7 +146,13 @@ describe("guided Forgejo setup", () => {
     expect(scripted.notify.mock.calls.flat().join(" ")).toContain(
       "Environment variable must begin",
     );
-    expect(stages).toEqual(["scope", "servers", "dashboard", "review"]);
+    expect(stages).toEqual([
+      "scope",
+      "servers",
+      "dashboard",
+      "tools",
+      "review",
+    ]);
     scripted.assertComplete();
   });
 
@@ -201,6 +207,51 @@ describe("guided Forgejo setup", () => {
     const written = JSON.parse(await readFile(target, "utf8"));
     expect(written).toEqual(result?.config);
     expect(written).not.toHaveProperty("allowedMutations");
+    scripted.assertComplete();
+  });
+
+  it("re-edits tool activation from the review step", async () => {
+    const root = await temporaryRoot();
+    const scripted = scriptedUi([
+      { kind: "select", match: "Discover servers" },
+      { kind: "select", match: "default fgj" },
+      { kind: "select", match: "Add this Forgejo server" },
+      { kind: "input", value: "work" },
+      { kind: "select", match: "detected server hostname only" },
+      { kind: "select", match: "Continue to dashboard" },
+      { kind: "select", match: "On demand" },
+      { kind: "select", match: "Full" },
+      { kind: "select", match: "Change tool activation" },
+      { kind: "select", match: "Lite" },
+      { kind: "select", match: "Write configuration" },
+    ]);
+    const exec = vi.fn<CommandExecutor>(async () => ({
+      code: 0,
+      stdout:
+        "Authenticated instances:\n\n  • git.acme.example (user: alice)\n",
+      stderr: "",
+    }));
+    const stages: SetupStage[] = [];
+
+    const result = await runForgejoSetup({
+      args: "project",
+      cwd: root,
+      ui: scripted.ui,
+      exec,
+      environment: {},
+      onStage: (stage) => stages.push(stage),
+    });
+
+    expect(result?.config.tools).toEqual({ mode: "lite" });
+    expect(stages).toEqual([
+      "scope",
+      "servers",
+      "dashboard",
+      "tools",
+      "review",
+      "tools",
+      "review",
+    ]);
     scripted.assertComplete();
   });
 

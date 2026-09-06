@@ -8,15 +8,15 @@ import { discoverFgjInstances, suggestServerAlias } from "./fgj.js";
 import type { MutationApprovalKey } from "./mutation-approvals.js";
 import type { CommandExecutor } from "./process.js";
 import type {
-  DashboardConfig,
-  ForgejoConfig,
-  ForgejoServerConfig,
-  ToolsConfig,
-  ToolMode,
+	DashboardConfig,
+	ForgejoConfig,
+	ForgejoServerConfig,
+	ToolsConfig,
+	ToolMode,
 } from "./types.js";
 
 export type SetupScope = "global" | "project";
-export type SetupStage = "scope" | "servers" | "dashboard" | "review";
+export type SetupStage = "scope" | "servers" | "dashboard" | "tools" | "review";
 
 type SetupUI = Pick<
 	ExtensionUIContext,
@@ -39,10 +39,10 @@ export interface ForgejoSetupResult {
 }
 
 interface SetupDraft {
-  servers: Record<string, ForgejoServerConfig>;
-  dashboard: DashboardConfig;
-  tools: ToolsConfig;
-  allowedMutations: MutationApprovalKey[];
+	servers: Record<string, ForgejoServerConfig>;
+	dashboard: DashboardConfig;
+	tools: ToolsConfig;
+	allowedMutations: MutationApprovalKey[];
 }
 
 interface PreparedDraft {
@@ -64,6 +64,7 @@ const REMOVE_SERVER = "Remove a configured server";
 const CONTINUE_SERVERS = "Continue to dashboard preferences";
 const WRITE_CONFIG = "Write configuration and reload Pi";
 const CHANGE_DASHBOARD = "Change dashboard preferences";
+const CHANGE_TOOLS = "Change tool activation";
 const CHANGE_SERVERS = "Change configured servers";
 const CANCEL_SETUP = "Cancel setup";
 
@@ -73,7 +74,7 @@ const PLACEHOLDER_SERVER = {
 } as const;
 
 const DEFAULT_DASHBOARD = parseConfig({
-  servers: { setup: PLACEHOLDER_SERVER },
+	servers: { setup: PLACEHOLDER_SERVER },
 }).dashboard;
 const DEFAULT_TOOLS = parseConfig({
 	servers: { setup: PLACEHOLDER_SERVER },
@@ -926,7 +927,7 @@ function setupSummary(
 		return `• ${alias}: ${server.baseUrl} · ${credential}${extras.length > 0 ? ` · SSH aliases ${extras.join(", ")}` : ""}`;
 	});
 	return [
-		"Forgejo setup · 4/4 · Review",
+		"Forgejo setup · 5/5 · Review",
 		`Path: ${target}`,
 		"",
 		`Servers (${servers.length}):`,
@@ -949,7 +950,7 @@ export async function runForgejoSetup(
 ): Promise<ForgejoSetupResult | undefined> {
 	const { args, cwd, ui, exec } = options;
 	const environment = options.environment ?? process.env;
-	options.onStage?.("scope", 1, 4);
+	options.onStage?.("scope", 1, 5);
 	const scope = await selectScope(args, ui);
 	if (!scope) return undefined;
 	const paths = configPaths(cwd, environment);
@@ -965,7 +966,7 @@ export async function runForgejoSetup(
 	const draft = prepared.draft;
 
 	for (;;) {
-		options.onStage?.("servers", 2, 4);
+		options.onStage?.("servers", 2, 5);
 		const proceed = await configureServers(
 			ui,
 			exec,
@@ -975,7 +976,7 @@ export async function runForgejoSetup(
 		);
 		if (!proceed) return undefined;
 
-		options.onStage?.("dashboard", 3, 4);
+		options.onStage?.("dashboard", 3, 5);
 		const dashboard = await configureDashboard(
 			ui,
 			draft.dashboard,
@@ -984,22 +985,30 @@ export async function runForgejoSetup(
 		if (!dashboard) continue;
 		draft.dashboard = dashboard;
 
+		options.onStage?.("tools", 4, 5);
 		const tools = await configureToolMode(ui, draft.tools, prepared.keptExisting);
 		if (!tools) continue;
 		draft.tools = tools;
 
 		for (;;) {
-			options.onStage?.("review", 4, 4);
+			options.onStage?.("review", 5, 5);
 			const choice = await ui.select(setupSummary(target, draft, environment), [
 				WRITE_CONFIG,
 				CHANGE_DASHBOARD,
+				CHANGE_TOOLS,
 				CHANGE_SERVERS,
 				CANCEL_SETUP,
 			]);
 			if (choice === CHANGE_DASHBOARD) {
-				options.onStage?.("dashboard", 3, 4);
+				options.onStage?.("dashboard", 3, 5);
 				const changed = await configureDashboard(ui, draft.dashboard, true);
 				if (changed) draft.dashboard = changed;
+				continue;
+			}
+			if (choice === CHANGE_TOOLS) {
+				options.onStage?.("tools", 4, 5);
+				const changed = await configureToolMode(ui, draft.tools, true);
+				if (changed) draft.tools = changed;
 				continue;
 			}
 			if (choice === CHANGE_SERVERS) break;
