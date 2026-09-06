@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-06
+
 ### Added
 
 - `tools.mode` config (`full` default, `lite`) for context-conscious sessions: in lite mode `forgejo_tools` swaps domains instead of accumulating them, so the model context carries at most the latest activation's tool schemas.
