@@ -22,5 +22,8 @@
     "previewLimit": 3,
     "notifications": "important",
     "privacy": "full"
+  },
+  "tools": {
+    "mode": "full"
   }
 }

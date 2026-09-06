@@ -8,9 +8,11 @@ import { discoverFgjInstances, suggestServerAlias } from "./fgj.js";
 import type { MutationApprovalKey } from "./mutation-approvals.js";
 import type { CommandExecutor } from "./process.js";
 import type {
-	DashboardConfig,
-	ForgejoConfig,
-	ForgejoServerConfig,
+  DashboardConfig,
+  ForgejoConfig,
+  ForgejoServerConfig,
+  ToolsConfig,
+  ToolMode,
 } from "./types.js";
 
 export type SetupScope = "global" | "project";
@@ -37,9 +39,10 @@ export interface ForgejoSetupResult {
 }
 
 interface SetupDraft {
-	servers: Record<string, ForgejoServerConfig>;
-	dashboard: DashboardConfig;
-	allowedMutations: MutationApprovalKey[];
+  servers: Record<string, ForgejoServerConfig>;
+  dashboard: DashboardConfig;
+  tools: ToolsConfig;
+  allowedMutations: MutationApprovalKey[];
 }
 
 interface PreparedDraft {
@@ -70,8 +73,11 @@ const PLACEHOLDER_SERVER = {
 } as const;
 
 const DEFAULT_DASHBOARD = parseConfig({
-	servers: { setup: PLACEHOLDER_SERVER },
+  servers: { setup: PLACEHOLDER_SERVER },
 }).dashboard;
+const DEFAULT_TOOLS = parseConfig({
+	servers: { setup: PLACEHOLDER_SERVER },
+}).tools;
 
 function isObject(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -85,6 +91,7 @@ function emptyDraft(): SetupDraft {
 	return {
 		servers: {},
 		dashboard: { ...DEFAULT_DASHBOARD },
+		tools: { ...DEFAULT_TOOLS },
 		allowedMutations: [],
 	};
 }
@@ -108,6 +115,7 @@ function parseExistingDraft(
 	const parsed = parseConfig({
 		servers: aliases.length > 0 ? rawServers : { setup: PLACEHOLDER_SERVER },
 		dashboard: value.dashboard,
+		tools: value.tools,
 		allowedMutations: preserveAllowedMutations
 			? value.allowedMutations
 			: undefined,
@@ -115,6 +123,7 @@ function parseExistingDraft(
 	return {
 		servers: aliases.length > 0 ? { ...parsed.servers } : {},
 		dashboard: { ...parsed.dashboard },
+		tools: { ...parsed.tools },
 		allowedMutations: [...(parsed.allowedMutations ?? [])],
 	};
 }
@@ -884,6 +893,25 @@ async function configureDashboard(
 	}
 }
 
+async function configureToolMode(
+	ui: SetupUI,
+	current: ToolsConfig,
+	allowKeep: boolean,
+): Promise<ToolsConfig | undefined> {
+	const keep = `Keep current — ${current.mode}`;
+	const full = "Full — activated domains stay for the session";
+	const lite =
+		"Lite — each activation swaps out other Forgejo domains (smaller model context)";
+	const choice = await ui.select(
+		"Forgejo setup · Tool activation\nChoose how the forgejo_tools loader activates Forgejo tool domains.",
+		[...(allowKeep ? [keep] : []), full, lite],
+	);
+	if (choice === full) return { mode: "full" as ToolMode };
+	if (choice === lite) return { mode: "lite" as ToolMode };
+	if (allowKeep && choice === keep) return { ...current };
+	return undefined;
+}
+
 function setupSummary(
 	target: string,
 	draft: SetupDraft,
@@ -905,6 +933,7 @@ function setupSummary(
 		...servers,
 		"",
 		`Dashboard: ${dashboardSummary(draft.dashboard)}`,
+		`Tools: ${draft.tools.mode} activation`,
 		...(draft.allowedMutations.length > 0
 			? [`Saved mutation approvals: ${draft.allowedMutations.length}`]
 			: []),
@@ -955,6 +984,10 @@ export async function runForgejoSetup(
 		if (!dashboard) continue;
 		draft.dashboard = dashboard;
 
+		const tools = await configureToolMode(ui, draft.tools, prepared.keptExisting);
+		if (!tools) continue;
+		draft.tools = tools;
+
 		for (;;) {
 			options.onStage?.("review", 4, 4);
 			const choice = await ui.select(setupSummary(target, draft, environment), [
@@ -975,6 +1008,7 @@ export async function runForgejoSetup(
 			const validated = parseConfig({
 				servers: draft.servers,
 				dashboard: draft.dashboard,
+				tools: draft.tools,
 				...(scope === "global" && draft.allowedMutations.length > 0
 					? { allowedMutations: draft.allowedMutations }
 					: {}),
