@@ -7,14 +7,14 @@ import {
 } from "./mutation-approvals.js";
 import { NON_FORGEJO_HOSTS } from "./remote-resolver.js";
 import type {
-  DashboardConfig,
-  DashboardScope,
-  ForgejoConfig,
-  ForgejoServerConfig,
-  NotificationLevel,
-  PrivacyMode,
-  ToolsConfig,
-  ToolMode,
+	DashboardConfig,
+	DashboardScope,
+	ForgejoConfig,
+	ForgejoServerConfig,
+	NotificationLevel,
+	PrivacyMode,
+	ToolsConfig,
+	ToolMode,
 } from "./types.js";
 
 const DEFAULT_DASHBOARD: DashboardConfig = {

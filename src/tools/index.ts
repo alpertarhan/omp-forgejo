@@ -143,6 +143,7 @@ export function registerForgejoTools(
 						requested: params.domains,
 						selected: [],
 						added: [],
+						removed: [],
 					},
 				);
 			}

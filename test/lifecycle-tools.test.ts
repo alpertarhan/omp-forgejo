@@ -937,11 +937,42 @@ describe("Forgejo tool activation", () => {
 			"forgejo_tools",
 			"forgejo_issue",
 		]);
-		expect(result.content[0]?.text).toContain("Disabled Forgejo tools (lite mode): forgejo_pull, forgejo_review");
+		expect(result.content[0]?.text).toContain(
+			"Disabled Forgejo tools (lite mode): forgejo_pull, forgejo_review",
+		);
 		expect((result.details.data as Record<string, unknown>).removed).toEqual([
 			"forgejo_pull",
 			"forgejo_review",
 		]);
+	});
+
+	it("reports the full activation result shape on legacy Pi without dynamic activation", async () => {
+		const tools = new Map<string, RegisteredTool>();
+		const api = {
+			registerTool(definition: RegisteredTool) {
+				tools.set(definition.name, definition);
+			},
+		} as unknown as ExtensionAPI;
+		registerForgejoTools(api, () => ({ config: {} }) as ForgejoRuntime);
+		const loader = tools.get("forgejo_tools");
+		if (!loader) throw new Error("Forgejo tool loader was not registered");
+
+		const result = (await loader.execute(
+			"load-review",
+			{ domains: ["review"] },
+			signal,
+			undefined,
+			noUi,
+		)) as ToolOutput;
+		expect(result.content[0]?.text).toContain(
+			"Dynamic Forgejo tool activation is unavailable",
+		);
+		expect(result.details.data).toEqual({
+			requested: ["review"],
+			selected: [],
+			added: [],
+			removed: [],
+		});
 	});
 
 	it("keeps lazy tools out of the system prompt and caps their model-visible output", () => {
