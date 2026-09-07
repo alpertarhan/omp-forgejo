@@ -17,7 +17,7 @@
     "verbatimModuleSyntax": true,
     "paths": {
       "typebox": [
-        "./node_modules/@oh-my-pi/omptype/dist/types/typebox.d.ts"
+        "./typebox.ts"
       ]
     },
     "skipLibCheck": true
