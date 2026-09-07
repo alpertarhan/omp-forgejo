@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, resolve } from "node:path";
@@ -18,7 +19,7 @@ import type {
 } from "./types.js";
 
 const DEFAULT_DASHBOARD: DashboardConfig = {
-	enabled: true,
+	enabled: false,
 	scope: "all",
 	refreshSeconds: 90,
 	previewLimit: 3,
@@ -398,16 +399,58 @@ export async function loadGlobalAllowedMutations(
 		throw new ConfigError(`${globalConfigPath} must contain a JSON object`);
 	return parseAllowedMutationKeys(value.allowedMutations);
 }
+interface ConfigHostContext {
+	isOmp: boolean;
+	agentDir?: string | undefined;
+}
 
+let hostContext: ConfigHostContext | undefined;
+
+/**
+ * Called by the extension entry once the host module is available. Keeps
+ * config.ts free of pi-coding-agent imports (which would drag optional
+ * dependencies into the test graph) while letting the running host decide
+ * where config lives.
+ */
+export function setConfigHostContext(context: ConfigHostContext | undefined): void {
+	hostContext = context;
+}
+
+/**
+ * Host-adaptive config locations with a legacy fallback.
+ *
+ * pi keeps its historical paths (~/.pi/agent/forgejo.json, <cwd>/.pi/).
+ * Under omp the active agent directory is ~/.omp/agent and the project
+ * config directory is .omp/, but a config left at the legacy .pi location
+ * keeps working so existing shared setups do not break on upgrade.
+ */
 export function configPaths(
 	cwd: string,
 	env: NodeJS.ProcessEnv = process.env,
 ): { global: string; project: string } {
+	const legacyGlobal = resolve(homedir(), ".pi", "agent", "forgejo.json");
+	let global = legacyGlobal;
+	let project = resolve(cwd, ".pi", "forgejo.json");
+	if (hostContext?.isOmp) {
+		const hostGlobal = hostContext.agentDir
+			? resolve(hostContext.agentDir, "forgejo.json")
+			: legacyGlobal;
+		const hostProject = resolve(cwd, ".omp", "forgejo.json");
+		const legacyProject = resolve(cwd, ".pi", "forgejo.json");
+		global = existsSync(hostGlobal)
+			? hostGlobal
+			: existsSync(legacyGlobal)
+				? legacyGlobal
+				: hostGlobal;
+		project = existsSync(hostProject)
+			? hostProject
+			: existsSync(legacyProject)
+				? legacyProject
+				: hostProject;
+	}
 	return {
-		global: env.PI_FORGEJO_CONFIG
-			? resolve(env.PI_FORGEJO_CONFIG)
-			: resolve(homedir(), ".pi", "agent", "forgejo.json"),
-		project: resolve(cwd, ".pi", "forgejo.json"),
+		global: env.PI_FORGEJO_CONFIG ? resolve(env.PI_FORGEJO_CONFIG) : global,
+		project,
 	};
 }
 

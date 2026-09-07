@@ -4,6 +4,7 @@ import type {
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteProvider } from "@earendil-works/pi-tui";
+import { setConfigHostContext } from "./config.js";
 import { runForgejoSetup, type SetupStage } from "./setup.js";
 import { createForgejoAutocompleteProvider } from "./dashboard/autocomplete.js";
 import { DashboardNotifier } from "./dashboard/notifier.js";
@@ -462,6 +463,23 @@ export default function forgejoExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
+		// Host-adaptive config location: resolve the running host (pi vs omp)
+		// before any config read so omp sessions follow ~/.omp/agent while
+		// legacy .pi configs keep working. Done here so config.ts itself stays
+		// free of pi-coding-agent imports (optional deps in the test graph).
+		try {
+			const hostModule = (await import(
+				"@earendil-works/pi-coding-agent"
+			)) as unknown as Record<string, unknown>;
+			const getAgentDir = hostModule.getAgentDir as (() => string) | undefined;
+			setConfigHostContext({
+				isOmp: "StatusLineComponent" in hostModule,
+				agentDir:
+					typeof getAgentDir === "function" ? getAgentDir() : undefined,
+			});
+		} catch {
+			setConfigHostContext(undefined);
+		}
 		forgejoTools.reset();
 		forgejoActive = false;
 		cleanup();

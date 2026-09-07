@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- The dashboard widget and its footer status are now off by default (`dashboard.enabled: false`): a repository still activates the tools and skills, but nothing is drawn on screen until the dashboard is enabled explicitly. Watch notifications keep following `dashboard.notifications` independently.
+- Host-adaptive config locations: under omp the active agent directory (`~/.omp/agent`) and project `.omp/` directory are preferred, with a legacy fallback so an existing `~/.pi/agent/forgejo.json` or `<cwd>/.pi/forgejo.json` keeps working unchanged; pi paths are untouched.
+
 ## [0.9.0] - 2026-09-07
 
 ### Added
