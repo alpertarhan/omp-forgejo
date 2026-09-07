@@ -1,5 +1,4 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { StringEnum } from "@earendil-works/pi-ai";
+import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import { Type } from "typebox";
 import {
 	boundModelText,
@@ -99,10 +98,10 @@ export function registerSearchTool(
 		description:
 			"Search issues, PRs, repositories, or users across Forgejo servers.",
     parameters: Type.Object({
-      action: StringEnum(["issues", "pulls", "repositories", "users"] as const),
+      action: Type.Enum(["issues", "pulls", "repositories", "users"] as const),
       query: Type.String({ minLength: 1 }),
       server: Type.Optional(Type.String()),
-      state: Type.Optional(StringEnum(["open", "closed", "all"] as const)),
+      state: Type.Optional(Type.Enum(["open", "closed", "all"] as const)),
       page: Type.Optional(Type.Integer({ minimum: 1 })),
       limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
       max_bytes: modelOutputBytes(),

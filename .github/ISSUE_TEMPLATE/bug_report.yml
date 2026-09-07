@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a reproducible defect in pi-forgejo-toolkit
+description: Report a reproducible defect in omp-forgejo
 title: "bug: "
 labels: [bug, triage]
 body:
@@ -15,10 +15,10 @@ body:
     validations:
       required: true
   - type: input
-    id: pi-version
+    id: omp-version
     attributes:
-      label: Pi version
-      placeholder: Output of pi --version
+      label: omp version
+      placeholder: Output of omp --version
     validations:
       required: true
   - type: input

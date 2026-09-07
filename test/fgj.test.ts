@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { buildFgjConfig, discoverFgjInstances, parseFgjAuthStatus } from "../src/fgj.js";
+import { discoverFgjInstances, parseFgjAuthStatus, suggestServerAlias } from "../src/fgj.js";
 import type { CommandExecutor } from "../src/process.js";
 
 describe("fgj instance discovery", () => {
@@ -33,32 +33,12 @@ describe("fgj instance discovery", () => {
     });
   });
 
-  it("builds deterministic aliases and fgj-backed server config", () => {
-    const config = buildFgjConfig([
-      { hostname: "git.acme.example", user: "alice" },
-      { hostname: "git.community.example", user: "alice" },
-      { hostname: "code.acme.example", user: "alice" },
-    ]);
-
-    expect(config.servers).toEqual({
-      acme: {
-        baseUrl: "https://git.acme.example",
-        hostname: "git.acme.example",
-        credentialProvider: "fgj",
-        remoteHosts: ["git.acme.example"],
-      },
-      community: {
-        baseUrl: "https://git.community.example",
-        hostname: "git.community.example",
-        credentialProvider: "fgj",
-        remoteHosts: ["git.community.example"],
-      },
-      "acme-2": {
-        baseUrl: "https://code.acme.example",
-        hostname: "code.acme.example",
-        credentialProvider: "fgj",
-        remoteHosts: ["code.acme.example"],
-      },
-    });
+  it("suggests deterministic aliases from hostnames", () => {
+    expect(suggestServerAlias("git.acme.example")).toBe("acme");
+    expect(suggestServerAlias("code.community.example")).toBe("community");
+    expect(suggestServerAlias("forgejo.example")).toBe("forgejo");
+    expect(suggestServerAlias("codeberg.org")).toBe("codeberg");
+    expect(suggestServerAlias("git.internal.example:3000")).toBe("internal");
+    expect(suggestServerAlias("---")).toBe("forgejo");
   });
 });

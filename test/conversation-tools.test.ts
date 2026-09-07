@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
 import type { ApiResult, ResourceRef } from "../src/types.js";
 import type { ForgejoClient, RequestOptions } from "../src/client.js";
@@ -125,7 +125,6 @@ function issueRuntime(body = "The complete issue body is visible.") {
     resolveRepo: () => repo,
     resolveResource: () => ref,
     client: () => ({ request } as unknown as ForgejoClient),
-    dashboard: { refresh: vi.fn(async () => undefined), refreshIfObserved: vi.fn(async () => undefined) },
   } as unknown as ForgejoRuntime;
   return { runtime, request };
 }
@@ -183,7 +182,6 @@ describe("issue conversation output", () => {
 
 function pullRuntime() {
   const ref: ResourceRef = { ...repo, kind: "pull", index: 9 };
-  const refresh = vi.fn(async () => undefined);
   const request = vi.fn(async (path: string, options?: RequestOptions) => {
     if (path.endsWith("/issues/9/comments") && options?.method === "POST") {
       return apiResult({
@@ -278,9 +276,8 @@ function pullRuntime() {
     resolveRepo: () => repo,
     resolveResource: () => ref,
     client: () => ({ request } as unknown as ForgejoClient),
-    dashboard: { refresh, refreshIfObserved: refresh },
   } as unknown as ForgejoRuntime;
-  return { runtime, request, refresh };
+  return { runtime, request };
 }
 
 describe("pull request conversation output", () => {
@@ -309,7 +306,6 @@ describe("pull request conversation output", () => {
     expect(outputText(result)).toContain("Normal PR discussion comment");
     const post = fixture.request.mock.calls.find((call) => call[1]?.method === "POST");
     expect(post?.[0]).toBe("repos/acme/app/issues/9/comments");
-    expect(fixture.refresh).toHaveBeenCalledOnce();
   });
 
   it("renders push events, changed files, and commit messages with pagination", async () => {
@@ -384,8 +380,7 @@ describe("remote review output", () => {
       client: () => ({ request } as unknown as ForgejoClient),
       draftKey: () => "work:acme/app!9",
       drafts: new Map(),
-      dashboard: { refresh: vi.fn(async () => undefined), refreshIfObserved: vi.fn(async () => undefined) },
-    } as unknown as ForgejoRuntime;
+      } as unknown as ForgejoRuntime;
     const tool = captureTool(registerReviewTool, runtime);
 
     const list = await tool.execute("list", { action: "list", ref: "work:acme/app!9" }, signal, undefined, noUi);
@@ -431,8 +426,7 @@ describe("notification output", () => {
       client: () => ({ request } as unknown as ForgejoClient),
       clients: { aliases: () => ["work"] },
       currentServer: () => "work",
-      dashboard: { refresh: vi.fn(async () => undefined), refreshIfObserved: vi.fn(async () => undefined) },
-    } as unknown as ForgejoRuntime;
+      } as unknown as ForgejoRuntime;
     const tool = captureTool(registerNotificationTool, runtime);
     const result = await tool.execute(
       "list",

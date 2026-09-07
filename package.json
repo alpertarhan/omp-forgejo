@@ -1,24 +1,25 @@
 {
-  "name": "pi-forgejo-toolkit",
-  "version": "0.10.0",
-  "description": "Multi-server Forgejo workflows, dashboard, reviews, and Actions tools for Pi",
+  "name": "omp-forgejo",
+  "version": "0.11.1",
+  "description": "Multi-server Forgejo workflows, watches, reviews, and Actions tools for omp",
   "type": "module",
   "author": {
     "name": "Alper Tarhan",
     "url": "https://github.com/alpertarhan"
   },
-  "homepage": "https://github.com/alpertarhan/pi-forgejo-toolkit#readme",
+  "homepage": "https://github.com/alpertarhan/omp-forgejo#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/alpertarhan/pi-forgejo-toolkit.git"
+    "url": "git+https://github.com/alpertarhan/omp-forgejo.git"
   },
   "bugs": {
-    "url": "https://github.com/alpertarhan/pi-forgejo-toolkit/issues"
+    "url": "https://github.com/alpertarhan/omp-forgejo/issues"
   },
   "keywords": [
-    "pi-package",
-    "pi",
-    "pi-extension",
+    "omp-package",
+    "omp",
+    "omp-extension",
+    "oh-my-pi",
     "forgejo",
     "gitea",
     "coding-agent",
@@ -45,26 +46,21 @@
     "test:watch": "vitest",
     "prepack": "bun run check"
   },
-  "pi": {
-    "extensions": [
-      "./extensions/forgejo/index.ts"
-    ]
-  },
   "omp": {
     "extensions": [
       "./extensions/forgejo/index.ts"
     ]
   },
   "peerDependencies": {
-    "@earendil-works/pi-ai": "*",
-    "@earendil-works/pi-coding-agent": "*",
-    "@earendil-works/pi-tui": "*",
-    "typebox": "*"
+    "@oh-my-pi/pi-ai": "*",
+    "@oh-my-pi/pi-coding-agent": "*",
+    "@oh-my-pi/pi-tui": "*"
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "0.85.0",
-    "@earendil-works/pi-coding-agent": "0.85.0",
-    "@earendil-works/pi-tui": "0.85.0",
+    "@oh-my-pi/pi-ai": "18.1.13",
+    "@oh-my-pi/pi-coding-agent": "18.1.13",
+    "@oh-my-pi/pi-tui": "18.1.13",
+    "@oh-my-pi/omptype": "18.1.13",
     "@types/node": "^22.19.0",
     "@types/proper-lockfile": "4.1.4",
     "typebox": "1.3.25",

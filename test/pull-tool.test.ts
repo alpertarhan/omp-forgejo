@@ -1,7 +1,7 @@
 import type {
   ExtensionAPI,
   ExtensionContext,
-} from "@earendil-works/pi-coding-agent";
+} from "@oh-my-pi/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
 import type { ForgejoClient } from "../src/client.js";
 import type { ForgejoRuntime } from "../src/runtime.js";
@@ -140,16 +140,14 @@ function fakeRuntime(options: FixtureOptions = {}) {
       throw new Error(`unexpected request: ${path}`);
     },
   );
-  const refresh = vi.fn(async () => undefined);
   const runtime = {
     sessionMutationApprovals: new Set<string>(),
     globalConfigPath: ".test-no-forgejo-config.json",
     resolveRepo: () => ({ server: "work", owner: "acme", repo: "app" }),
     resolveResource: () => ref,
     client: () => ({ request }) as unknown as ForgejoClient,
-    dashboard: { refresh, refreshIfObserved: refresh },
   } as unknown as ForgejoRuntime;
-  return { runtime, request, refresh };
+  return { runtime, request };
 }
 
 const signal = new AbortController().signal;
@@ -411,6 +409,5 @@ describe("forgejo_pull guarded merge", () => {
       head_commit_id: "head-sha",
       delete_branch_after_merge: true,
     });
-    expect(fixture.refresh).toHaveBeenCalledOnce();
   });
 });

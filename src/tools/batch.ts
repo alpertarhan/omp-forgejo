@@ -206,7 +206,6 @@ export async function batchPatchIssues(
 		},
 		16_000,
 	);
-	await runtime.dashboard.refreshIfObserved(signal);
 	return result;
 }
 
@@ -248,7 +247,6 @@ export async function batchPatchPulls(
 		},
 		16_000,
 	);
-	await runtime.dashboard.refreshIfObserved(signal);
 	return result;
 }
 
@@ -303,7 +301,6 @@ export async function batchCreatePulls(
 			}
 		}),
 	);
-	await runtime.dashboard.refreshIfObserved(signal);
 	const failures = items.filter((item) => item.details.error !== undefined)
 		.length;
 	const assembled = boundModelText(

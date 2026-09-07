@@ -4,7 +4,40 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.11.1] - 2026-09-07
+
+### Fixed
+
+- The bare repository reference form (`server:owner/repo`, plus `fj://server/owner/repo`) that every ref-validation error hint advertises is now actually accepted: `resolveRepo` targets (`list`/`create`/search-style `ref` parameters), `forgejo_context action=resolve_ref`, and `/fj-open` all resolve it. Previously the exact format suggested by the error message was rejected again, trapping agents in a retry loop, and `/fj-open` could not open a repository reference at all. The shared hint now lives in `src/refs.ts` instead of being duplicated inline.
+- `set_due_date` no longer reports a false failure for sub-second timestamps: Forgejo stores deadlines with second resolution, so `normalizedDueDate` now floors the normalized value to whole seconds and the post-mutation verification matches what the server echoes back.
+- `ForgejoClient.request` starts its timeout only after credentials resolve. An fgj subprocess taking up to its 10 s budget no longer eats into the 30 s request window and surfaces as a spurious `timed out`.
+- A cached fgj token that was revoked or rotated server-side is now dropped and re-resolved once after an HTTP 401 before the error surfaces; environment tokens are never retried.
+- Actions capability fallbacks (used only when Swagger discovery is unreachable) now follow the real Forgejo release history: workflow dispatch since v8.0, run list/get since v12.0, and cancel/artifacts (with job logs) since v16.0; rerun keeps the conservative `unknown` fallback. Previously every feature below v12 read as unavailable.
+- `forgejo_issue`/`forgejo_pull`/`forgejo_actions` `list` output is now bounded by `max_bytes` like every other read path, reporting `truncated`/byte metadata instead of streaming unbounded model output.
+- `/fj-setup` updating an existing configuration now preserves unknown top-level keys (for example a leftover `dashboard` section or `$schema`) instead of silently dropping them; the replace flow still starts from a clean file.
+
+### Removed
+
+- `buildFgjConfig` (unused outside tests); alias suggestion is still covered through `suggestServerAlias`.
+
+## [0.11.0] - 2026-09-07
+
+### Changed
+
+- The package is now omp-only and renamed to `omp-forgejo`. The `pi` manifest entry is gone; only `pkg.omp` is declared, installs go through `omp plugin install`, and the peer dependencies moved from `@earendil-works/*` to `@oh-my-pi/*`, which the omp host resolves onto its bundled copies. Tool parameter schemas now use omp's omptype TypeBox shim (bare `typebox` dependency removed); `StringEnum` schemas became `Type.Enum`.
+- Configuration locations are omp-native without legacy fallbacks: global config lives in the active agent directory (`~/.omp/agent`, `~/.omp/profiles/<name>/agent` under a profile, or `PI_CODING_AGENT_DIR`), project config in `<project>/.omp/forgejo.json`, and the override variable is `OMP_FORGEJO_CONFIG` (replacing `PI_FORGEJO_CONFIG`).
+- The bundled skills are now discovered by omp's plugin skill provider from the package's `skills/` directory whenever the plugin is enabled, instead of the `resources_discover` event the omp runtime never emits. Skill entries cost two prompt lines each and can be disabled with `disabledExtensions: ["skill:<name>"]`. Outside Forgejo repositories the toolkit still removes its tools from the model context.
+- Dynamic tool activation now calls `getActiveTools`/`setActiveTools` directly; the compatibility guards and their "unavailable in this Pi version" fallback are gone.
+- The dashboard feature is removed entirely: the TUI widget, `/fj` overlay, popup notifier, background polling, editor autocomplete, the `forgejo_dashboard` tool and its loader domain, the `dashboard` config section, and the setup wizard's dashboard stage. In omp the agent is the dashboard's consumer: attention arrives through `forgejo_watch` source watches (`target=review_requests|notifications`) and on-demand tool reads instead of a human-facing TUI layer. A `dashboard` section left in an existing configuration file is now ignored. The attention query data plane survives as `src/attention.ts` behind the watch feature.
+
+### Removed
+
+- Support for the Pi host: Pi-specific manifest entry, `~/.pi` config locations, `PI_FORGEJO_CONFIG`, and the `promptGuidelines`/`promptSnippet` tool fields that only Pi consumed.
+- `/fj`, `/fj-widget`, and `/fj-refresh` commands, and the `/fj-setup` dashboard stage (the wizard is now scope, servers, tools, review).
+
+### Fixed
+
+- `forgejo_watch` schema defaults no longer materialize into validated params: under omp's validation layer, the old `{ default: false }` on `include_self` turned into an explicit value that `target`/`ci` start paths rightly rejected. Defaults are now applied only inside `execute`.
 
 ## [0.10.0] - 2026-09-07
 
@@ -191,14 +224,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `forgejo-issue-to-pr` and `forgejo-pr-review` workflow skills.
 - Environment-variable and `fgj` credential providers with redirect and secret-redaction protections.
 
-[Unreleased]: https://github.com/alpertarhan/pi-forgejo-toolkit/compare/v0.10.0...HEAD
-[0.10.0]: https://github.com/alpertarhan/pi-forgejo-toolkit/compare/v0.9.0...v0.10.0
-[0.9.0]: https://github.com/alpertarhan/pi-forgejo-toolkit/compare/v0.8.0...v0.9.0
-[0.8.0]: https://github.com/alpertarhan/pi-forgejo-toolkit/compare/v0.7.0...v0.8.0
-[0.7.0]: https://github.com/alpertarhan/pi-forgejo-toolkit/compare/v0.6.1...v0.7.0
-[0.4.0]: https://github.com/alpertarhan/pi-forgejo-toolkit/compare/v0.3.0...v0.4.0
-[0.3.0]: https://github.com/alpertarhan/pi-forgejo-toolkit/compare/v0.2.2...v0.3.0
-[0.2.2]: https://github.com/alpertarhan/pi-forgejo-toolkit/compare/v0.2.1...v0.2.2
-[0.2.1]: https://github.com/alpertarhan/pi-forgejo-toolkit/compare/v0.2.0...v0.2.1
-[0.2.0]: https://github.com/alpertarhan/pi-forgejo-toolkit/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/alpertarhan/pi-forgejo-toolkit/releases/tag/v0.1.0
+[Unreleased]: https://github.com/alpertarhan/omp-forgejo/compare/v0.11.1...HEAD
+[0.11.1]: https://github.com/alpertarhan/omp-forgejo/compare/v0.11.0...v0.11.1
+[0.11.0]: https://github.com/alpertarhan/omp-forgejo/compare/v0.10.0...v0.11.0
+[0.10.0]: https://github.com/alpertarhan/omp-forgejo/compare/v0.9.0...v0.10.0
+[0.9.0]: https://github.com/alpertarhan/omp-forgejo/compare/v0.8.0...v0.9.0
+[0.8.0]: https://github.com/alpertarhan/omp-forgejo/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/alpertarhan/omp-forgejo/compare/v0.6.1...v0.7.0
+[0.4.0]: https://github.com/alpertarhan/omp-forgejo/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/alpertarhan/omp-forgejo/compare/v0.2.2...v0.3.0
+[0.2.2]: https://github.com/alpertarhan/omp-forgejo/compare/v0.2.1...v0.2.2
+[0.2.1]: https://github.com/alpertarhan/omp-forgejo/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/alpertarhan/omp-forgejo/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/alpertarhan/omp-forgejo/releases/tag/v0.1.0

@@ -28,7 +28,7 @@ Examples of unacceptable behavior include:
 
 Project maintainers are responsible for clarifying and enforcing these standards. They may remove, edit, or reject comments, commits, code, issues, and other contributions that do not align with this Code of Conduct.
 
-Report abusive, harassing, or otherwise unacceptable behavior privately through the repository's [security advisory form](https://github.com/alpertarhan/pi-forgejo-toolkit/security/advisories/new). Reports will be reviewed promptly and handled as confidentially as possible.
+Report abusive, harassing, or otherwise unacceptable behavior privately through the repository's [security advisory form](https://github.com/alpertarhan/omp-forgejo/security/advisories/new). Reports will be reviewed promptly and handled as confidentially as possible.
 
 Maintainers who do not follow or enforce this Code of Conduct may be temporarily or permanently removed from the project community.
 

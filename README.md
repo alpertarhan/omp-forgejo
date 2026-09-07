@@ -1,28 +1,30 @@
-# pi-forgejo-toolkit
+<p align="center">
+  <img src="docs/banner.png" width="960" alt="omp-forgejo — Multi-server Forgejo workflows for the omp coding agent" />
+</p>
 
-[![npm version](https://img.shields.io/npm/v/pi-forgejo-toolkit.svg)](https://www.npmjs.com/package/pi-forgejo-toolkit)
-[![CI](https://github.com/alpertarhan/pi-forgejo-toolkit/actions/workflows/ci.yml/badge.svg)](https://github.com/alpertarhan/pi-forgejo-toolkit/actions/workflows/ci.yml)
-[![license](https://img.shields.io/npm/l/pi-forgejo-toolkit.svg)](LICENSE)
-[![Pi package](https://img.shields.io/badge/Pi-package-6b5cff)](https://pi.dev/packages/pi-forgejo-toolkit)
+# omp-forgejo
 
-A multi-server [Forgejo](https://forgejo.org/) integration for [Pi](https://pi.dev/): repository context resolution, an attention dashboard, issue and pull-request workflows, evidence-backed reviews, notifications, search, and Forgejo Actions operations.
+[![npm version](https://img.shields.io/npm/v/omp-forgejo.svg)](https://www.npmjs.com/package/omp-forgejo)
+[![CI](https://github.com/alpertarhan/omp-forgejo/actions/workflows/ci.yml/badge.svg)](https://github.com/alpertarhan/omp-forgejo/actions/workflows/ci.yml)
+[![license](https://img.shields.io/npm/l/omp-forgejo.svg)](LICENSE)
 
-`pi-forgejo-toolkit` is designed for teams that use Forgejo instead of GitHub, especially when the same developer works across multiple Forgejo instances.
+A multi-server [Forgejo](https://forgejo.org/) integration for omp: repository context resolution, attention watches, issue and pull-request workflows, evidence-backed reviews, notifications, search, and Forgejo Actions operations.
+
+`omp-forgejo` is designed for teams that use Forgejo instead of GitHub, especially when the same developer works across multiple Forgejo instances.
 
 ## Why this package
 
 A bare `owner/repo#123` is not enough when two servers can contain the same owner, repository, or issue number. This package keeps server identity attached to every resource and resolves the active repository from local Git remotes when that resolution is unambiguous.
 
-It also gives Pi a single, safety-oriented interface for:
+It also gives omp a single, safety-oriented interface for:
 
 - Multiple Forgejo servers with separate credentials
 - Issues, pull requests, comments, planning metadata, and subscriptions
 - Pull-request diffs, checks, reviews, readiness, and guarded merges
 - Forgejo Actions runs, jobs, bounded logs, dispatches, cancellation, reruns, and artifacts
-- A compact TUI attention queue across all configured servers
 - Session-scoped incremental timeline updates that avoid rereading an entire discussion
-- Session-scoped one-shot issue and pull-request watches that wake Pi on matching timeline metadata
-- CI watches that wake Pi when a pull request's Actions runs finish, and cross-server attention watches for new review requests and notifications
+- Session-scoped one-shot issue and pull-request watches that wake omp on matching timeline metadata
+- CI watches that wake omp when a pull request's Actions runs finish, and cross-server attention watches for new review requests and notifications
 - Cross-server search that never drops the source server identity
 
 ## Installation
@@ -30,63 +32,51 @@ It also gives Pi a single, safety-oriented interface for:
 Install the latest npm release:
 
 ```bash
-pi install npm:pi-forgejo-toolkit
+omp plugin install omp-forgejo
 ```
 
-Restart Pi or run `/reload`, then create a configuration:
+Restart omp or run `/reload`, then create a configuration:
 
 ```text
 /fj-setup
 ```
 
-`/fj-setup` opens a native, guided TUI. It asks where to save the configuration, walks through every server and credential provider, configures dashboard preferences and the tool activation mode, then shows a final summary before writing. No JSON editing is required.
+`/fj-setup` opens a native, guided TUI. It asks where to save the configuration, walks through every server and credential provider, configures the tool activation mode, then shows a final summary before writing. No JSON editing is required.
 
 Alternative package sources:
 
 ```bash
 # Install directly from GitHub
-pi install git:github.com/alpertarhan/pi-forgejo-toolkit
+omp plugin install github:alpertarhan/omp-forgejo
 
 # Pin an exact npm version
-pi install npm:pi-forgejo-toolkit@0.4.0
+omp plugin install omp-forgejo@0.11.1
 ```
 
-Update an unpinned install with:
-
-```bash
-pi update npm:pi-forgejo-toolkit
-```
+Updates are install-driven: re-run `omp plugin install` with the new version.
 
 ## Requirements and compatibility
 
-- A current Pi installation
-- Pi 0.84.2 or newer, so `attention=context` watch messages record context without steering the active run
+- A current omp installation (18.1 or newer, so `attention=context` watch messages record context without steering the active run)
 - One or more reachable Forgejo instances
 - Either an authenticated `fgj` profile or one token environment variable per server
 - Forgejo API permissions appropriate for the operations you want to use
 
 The package is tested against Forgejo 16.0.2. Actions support is discovered per route from the instance's same-origin Swagger document; unsupported operations fail closed instead of assuming that every Forgejo release exposes the same endpoints.
 
-### Flexible Pi versions
+### Flexible omp versions
 
-Published Pi core dependencies use the official package contract's `"*"` peer ranges:
-
-- `@earendil-works/pi-ai`
-- `@earendil-works/pi-coding-agent`
-- `@earendil-works/pi-tui`
-- `typebox`
-
-This intentionally avoids pinning the extension to one Pi release. Normal Pi updates do not require a matching `pi-forgejo-toolkit` release. Development dependencies are locked with Bun only to keep this repository's CI reproducible.
+The omp host resolves the extension's peer dependencies (`@oh-my-pi/pi-ai`, `@oh-my-pi/pi-coding-agent`, `@oh-my-pi/pi-tui`) onto its bundled copies when it loads the extension, so normal omp updates do not require a matching `omp-forgejo` release. Development dependencies are locked with Bun only to keep this repository's CI reproducible.
 
 ## Quick start
 
-1. Install the package with `pi install npm:pi-forgejo-toolkit`.
-2. Restart Pi or run `/reload`.
+1. Install the package with `omp plugin install omp-forgejo`.
+2. Restart omp or run `/reload`.
 3. Run `/fj-setup` and choose global or project scope.
 4. Add each server from an authenticated `fgj` profile or by naming an API-token environment variable.
-5. Choose a dashboard profile, review the summary, and save.
+5. Choose the tool activation mode, review the summary, and save.
 6. Open a repository whose Git remote points at a configured server.
-7. Run `/fj-context` and `/fj-health`, then open `/fj`.
+7. Run `/fj-context` and `/fj-health`.
 
 Example prompts:
 
@@ -106,8 +96,8 @@ Run `/fj-setup` without arguments for the full four-step flow:
 
 1. **Scope** — choose global configuration for every project or project-local configuration for the current workspace. `/fj-setup global` and `/fj-setup project` skip this question.
 2. **Servers** — discover signed-in `fgj` instances or add API-token servers without a CLI. Add, reconfigure, or remove multiple servers; choose short aliases and optional SSH host aliases used by Git remotes.
-3. **Dashboard** — select Recommended, Quiet, Private, or On-demand behavior, or choose every widget, scope, notification, privacy, refresh, and preview setting.
-4. **Review** — inspect the destination, server URLs, credential sources, token-variable availability, remote aliases, and dashboard behavior before saving.
+3. **Tools** — choose whether activated Forgejo domains accumulate (`full`) or swap (`lite`).
+4. **Review** — inspect the destination, server URLs, credential sources, token-variable availability, and remote aliases before saving.
 
 The wizard can update an existing configuration or explicitly replace it. Esc cancels without writing. API token **values** are never requested or stored; the wizard writes only environment variable names. Configuration is validated, written atomically with owner-only permissions, and rejected if another process changes the file while the wizard is open.
 
@@ -117,10 +107,10 @@ The JSON examples below remain useful as an advanced reference, but normal insta
 
 Configuration is loaded from two locations:
 
-- Global: `~/.pi/agent/forgejo.json`
-- Project: `<project>/.pi/forgejo.json`
+- Global: `~/.omp/agent/forgejo.json` (or `~/.omp/profiles/<name>/agent/forgejo.json` under `omp --profile <name>`)
+- Project: `<project>/.omp/forgejo.json`
 
-Set `PI_FORGEJO_CONFIG=/absolute/path/to/forgejo.json` to override the global path. Trusted project configuration can add or replace server aliases and override dashboard fields. Project-local configuration and Git/SSH repository discovery are ignored until Pi marks the project trusted; global configuration remains available.
+Set `OMP_FORGEJO_CONFIG=/absolute/path/to/forgejo.json` to override the global path. Trusted project configuration can add or replace server aliases and override tool settings. Project-local configuration and Git/SSH repository discovery are ignored until omp marks the project trusted; global configuration remains available.
 
 Set `tools.mode` to `lite` to bound the model context the toolkit's tools occupy. In lite mode the `forgejo_tools` loader swaps domains instead of accumulating them: activating a domain deactivates the other Forgejo domain tools, so the session carries at most the schemas of the latest activation. The default `full` mode keeps activated domains for the rest of the session.
 
@@ -142,14 +132,6 @@ Inline plaintext token fields are rejected. Use the CLI-independent `env` provid
       "remoteHosts": ["forgejo-community"]
     }
   },
-  "dashboard": {
-    "enabled": true,
-    "scope": "all",
-    "refreshSeconds": 90,
-    "previewLimit": 3,
-    "notifications": "important",
-    "privacy": "full"
-  },
   "tools": {
     "mode": "full"
   }
@@ -165,6 +147,8 @@ Use `fgjConfig` when the CLI configuration is not at its default path:
   "fgjConfig": "/absolute/path/to/fgj/config.yaml"
 }
 ```
+
+Tokens are resolved once and cached for the session. If the server rejects a cached `fgj` token with `401`, the toolkit drops it, resolves a fresh token, and retries the request exactly once before surfacing the error.
 
 ### API token credentials (no CLI required)
 
@@ -184,7 +168,7 @@ Use `fgjConfig` when the CLI configuration is not at its default path:
 
 ```bash
 export FORGEJO_WORK_TOKEN='...'
-pi
+omp
 ```
 
 Use a separate, least-privilege Forgejo API token for every server. The environment provider reads only the named variable and never invokes `fgj` or another CLI. Required scopes depend on the enabled operations: repository and issue reads for normal inspection; write scopes for comments and metadata; notification scopes for inbox updates; and repository permissions for Actions or merge operations.
@@ -199,17 +183,6 @@ Use a separate, least-privilege Forgejo API token for every server. The environm
 | `tokenEnv` | For `env` | Environment variable containing the Forgejo API token. |
 | `fgjConfig` | No | Optional absolute or relative path passed to `fgj --config`. |
 | `remoteHosts` | No | Extra Git/SSH hostnames or SSH aliases that identify this server. |
-
-### Dashboard fields
-
-| Field | Default | Values |
-| --- | --- | --- |
-| `enabled` | `true` | Automatically show the compact TUI widget when the current Git remotes match a configured Forgejo server. |
-| `scope` | `all` | `all` or `current`. |
-| `refreshSeconds` | `90` | Integer from 30 to 3600. |
-| `previewLimit` | `3` | Integer from 1 to 20. |
-| `notifications` | `important` | `off`, `important`, or `all`. |
-| `privacy` | `full` | `full` or `counts-only`; counts-only hides resource previews and active repository identity in the widget. |
 
 See [`examples/forgejo.json`](examples/forgejo.json) for a complete configuration.
 
@@ -226,11 +199,12 @@ work:platform/api!45           pull request
 Canonical references are also accepted:
 
 ```text
+fj://work/platform/api
 fj://work/platform/api/issues/123
 fj://work/platform/api/pulls/45
 ```
 
-For tool calls, an explicit qualified `ref` wins. Otherwise `server`, `owner`, and `repo` must be supplied together. If neither is supplied, the package uses the repository selected from local Git remotes or `/fj-server`.
+For tool calls, an explicit qualified `ref` wins. The bare repository form is accepted wherever a repository target is enough (listing, creating, searching, `/fj-open`); actions that target one issue or pull request require the `#N`/`!N` index form. Otherwise `server`, `owner`, and `repo` must be supplied together. If neither is supplied, the package uses the repository selected from local Git remotes or `/fj-server`.
 
 The remote resolver understands HTTPS, `ssh://`, SCP-style SSH URLs, ports, `.git` suffixes, Forgejo subpaths, and SSH host aliases. If multiple configured repositories match, it stops and requires an explicit choice.
 
@@ -238,27 +212,26 @@ The remote resolver understands HTTPS, `ssh://`, SCP-style SSH URLs, ports, `.gi
 
 | Command | Purpose |
 | --- | --- |
-| `/fj-setup [global\|project]` | Guided TUI for scope, `fgj` or API-token servers, Git aliases, dashboard preferences, review, and safe writing. |
+| `/fj-setup [global\|project]` | Guided TUI for scope, `fgj` or API-token servers, Git aliases, tool activation, review, and safe writing. |
 | `/fj-context` | Show the active server and repository. |
 | `/fj-server [alias]` | Select a server for the current session. |
 | `/fj-health` | Authenticate and report every configured server's Forgejo version. |
-| `/fj-refresh` | Refresh capabilities and the dashboard immediately. |
-| `/fj-widget [on\|off\|all\|current]` | Show, hide, or scope the compact widget. |
 | `/fj-open [qualified-ref]` | Open the active repository or exact issue/PR in the browser. |
-| `/fj` | Open the interactive attention dashboard and paste a selected reference into the editor. |
 
-## Pi tools
+## omp tools
 
-The package registers ten model-callable tools. Users normally describe the desired operation instead of constructing JSON manually.
+The package registers nine model-callable tools. Users normally describe the desired operation instead of constructing JSON manually.
 
-By default, only `forgejo_context` and the compact `forgejo_tools` loader are active, and only in repositories whose Git remotes resolve to a configured Forgejo server; everywhere else the toolkit stays out of the model context entirely — no tools, no skills, no prompts. The loader activates at most four requested issue, pull, review, Actions, notification, search, dashboard, or watch domains per call, additively for the current session, and replies with a per-domain action cheatsheet so the next call uses the right action on the first try; a new session returns to the compact set. There is deliberately no "load everything" option. The bundled skills request only their required domains and are contributed through resource discovery, so they appear only where the toolkit is active. This keeps eight larger schemas out of Pi's initial context and avoids rebuilding the system prompt when a domain is activated, without delaying slash commands or the TUI dashboard.
+By default, only `forgejo_context` and the compact `forgejo_tools` loader are active, and only in repositories whose Git remotes resolve to a configured Forgejo server; everywhere else the toolkit's tools stay out of the model context entirely. The loader activates at most four requested issue, pull, review, Actions, notification, search, or watch domains per call, additively for the current session, and replies with a per-domain action cheatsheet so the next call uses the right action on the first try; a new session returns to the compact set. There is deliberately no "load everything" option. The bundled skills request only their required domains and are discovered by omp's plugin skill provider whenever the package is enabled. This keeps seven larger schemas out of omp's initial context and avoids rebuilding the system prompt when a domain is activated, without delaying slash commands.
 
 With `tools.mode` set to `lite` (see [Configuration](#configuration)), activation is a swap: each `forgejo_tools` call deactivates the Forgejo domain tools it did not select, so the session context never carries more than the latest activation's schemas.
 
-If you use only the raw tools and slash commands, omit the two workflow entries from every prompt with a package filter:
+If you use only the raw tools and slash commands, disable the two workflow skills in `~/.omp/agent/config.yml`:
 
-```json
-{ "source": "npm:pi-forgejo-toolkit", "skills": [] }
+```yaml
+disabledExtensions:
+  - skill:forgejo-issue-to-pr
+  - skill:forgejo-pr-review
 ```
 
 The extension and all tools remain available; only automatic `forgejo-issue-to-pr` and `forgejo-pr-review` skill selection is disabled.
@@ -267,7 +240,6 @@ The extension and all tools remain available; only automatic `forgejo-issue-to-p
 | --- | --- |
 | `forgejo_context` | `current`, `servers`, `select`, `whoami`, `health`, `capabilities`, `resolve_ref` |
 | `forgejo_tools` | Activate one to four Forgejo tool domains for the current session |
-| `forgejo_dashboard` | `get`, `refresh`, `get_attention_items`, `get_assigned_issues`, `get_authored_pulls`, `get_review_requests`, `get_failed_runs` |
 | `forgejo_search` | `issues`, `pulls`, `repositories`, `users` |
 | `forgejo_notifications` | `list`, `get`, `mark_read`, `mark_unread`, `mark_all_read` |
 | `forgejo_issue` | `list`, `get`, `timeline`, `updates`, `create`, `update`, `comment`, `get_comment`, `edit_comment`, `delete_comment`, `subscription`, `subscribe`, `unsubscribe`, `set_labels`, `set_assignees`, `set_milestone`, `clear_milestone`, `set_due_date`, `clear_due_date`, `close`, `reopen`; `refs[]` batches get/update/close/reopen |
@@ -276,41 +248,23 @@ The extension and all tools remain available; only automatic `forgejo-issue-to-p
 | `forgejo_actions` | `list`, `get`, `jobs`, `job_log`, `dispatch`, `cancel`, `rerun`, `artifacts`, `artifact`, `download_artifact` |
 | `forgejo_watch` | `start`, `list`, `stop` for one-shot timeline, CI, and attention watches |
 
-`forgejo_watch` starts only after its `watch` domain is loaded. Watches are in-memory and scoped to the current Pi session: unloading the lazy tool does not stop active watches, while session shutdown, replacement, reload, or a new session closes them. A match, timeout, or permanent failure completes a watch once. `attention=turn` steers or starts an agent turn; `attention=context` adds context without starting one. `include_self=false` filters timeline events by actor and merge transitions by `merged_by`; Forgejo's issue/PR state response does not identify who closed or reopened a resource, so those two transition filters cannot distinguish self-authored changes. The `closed` filter matches non-merge closes only; use `merged` (or `feedback` for review activity) to observe merges. An idle watch gets one final poll when its timeout expires, so a match that lands on the deadline is reported instead of a timeout.
+`forgejo_watch` starts only after its `watch` domain is loaded. Watches are in-memory and scoped to the current omp session: unloading the lazy tool does not stop active watches, while session shutdown, replacement, reload, or a new session closes them. A match, timeout, or permanent failure completes a watch once. `attention=turn` steers or starts an agent turn; `attention=context` adds context without starting one. `include_self=false` filters timeline events by actor and merge transitions by `merged_by`; Forgejo's issue/PR state response does not identify who closed or reopened a resource, so those two transition filters cannot distinguish self-authored changes. The `closed` filter matches non-merge closes only; use `merged` (or `feedback` for review activity) to observe merges. An idle watch gets one final poll when its timeout expires, so a match that lands on the deadline is reported instead of a timeout.
 
-Besides per-ref timeline watches, `forgejo_watch` starts two source watches. `events=["ci"]` on a pull-request ref polls the pull's current head SHA and wakes once any Actions run that was in flight or started after arming finishes (`ci-success`, `ci-failure`, `ci-cancelled`, `ci-skipped`), following new pushes to a fresh head SHA; runs that were already terminal when the watch armed are treated as baseline and never re-reported. `target=review_requests` or `target=notifications` watches the authenticated user's incoming review requests or unread notifications across every configured server (or a `servers` subset via the tool), seeding a silent baseline and waking on new items — the wake the TUI dashboard gives a human, delivered to the agent instead. Degraded servers do not hold the watch hostage: healthy servers still wake the agent, a server unreachable at arming is re-baselined silently on recovery, and `action=list` reports `degradedServers`. An incomplete timeline scan still matches events from its fetched pages, grows its scan capacity, and fails loudly rather than live-locking once capacity is maximal.
+Besides per-ref timeline watches, `forgejo_watch` starts two source watches. `events=["ci"]` on a pull-request ref polls the pull's current head SHA and wakes once any Actions run that was in flight or started after arming finishes (`ci-success`, `ci-failure`, `ci-cancelled`, `ci-skipped`), following new pushes to a fresh head SHA; runs that were already terminal when the watch armed are treated as baseline and never re-reported. `target=review_requests` or `target=notifications` watches the authenticated user's incoming review requests or unread notifications across every configured server (or a `servers` subset via the tool), seeding a silent baseline and waking on new items — the kind of wake a notification center gives a human, delivered to the agent instead. Degraded servers do not hold the watch hostage: healthy servers still wake the agent, a server unreachable at arming is re-baselined silently on recovery, and `action=list` reports `degradedServers`. An incomplete timeline scan still matches events from its fetched pages, grows its scan capacity, and fails loudly rather than live-locking once capacity is maximal.
 
 Wake messages contain only bounded toolkit-generated metadata: an exact follow-up hint (`forgejo_pull action=updates`, `forgejo_actions action=jobs`, or `forgejo_pull action=get`), a re-arm hint for continuing a completed watch, item URLs where the toolkit generates them, and for attention items a sanitized 120-character title — remote bodies, diffs, run titles, and raw errors are always excluded. Timeline cursor state stores fixed-size event fingerprints rather than remote bodies or titles.
 
-Model-visible metadata and discussion output defaults to 16 KB. Pull-request diffs, Actions job logs, and watch lists default to 32 KB. `max_bytes` can raise or lower configurable budgets but is hard-capped at 128 KB; truncation is explicit, and paginated results retain recovery metadata. Cross-server search includes a bounded, single-line body preview; use the qualified result with `forgejo_issue` or `forgejo_pull` when the complete body is needed. Oversized hidden tool details are compacted before Pi persists them, retaining small identifiers and recovery fields rather than duplicating full remote payloads in session history. Artifact downloads use the separate `max_download_bytes` limit and write ZIP bytes to a deliberate workspace path instead of returning the archive to the model.
-
-## Dashboard
-
-The dashboard aggregates, per server:
-
-- Assigned open issues
-- Authored open pull requests
-- Pull requests awaiting your review
-- Unread notification threads
-- Latest failed Forgejo Actions runs for the active repository
-
-`My Open PRs` is the complete count of authored pull requests that Forgejo currently reports as open in the selected dashboard scope; it is not a lifetime total. Item lists remain bounded by `previewLimit`.
-
-One server failing does not erase healthy servers' data. A failed server's cached issues, pull requests, notifications, and CI runs are cleared immediately rather than displayed as stale; its error remains visible. Notification popups can be disabled or limited to important items.
-
-The widget, popup notifier, and automatic dashboard polling start only when local Git remotes identify a configured Forgejo repository. A repository with multiple matching Forgejo remotes remains eligible, but the ambiguous repository context must still be selected explicitly before current-repository operations. In unrelated directories they stay inactive even when `dashboard.enabled` is `true`; `/fj-widget on`, `/fj`, `/fj-refresh`, and explicit dashboard tool reads remain available on demand. Background polling otherwise runs only while the widget is visible or popup notifications are active. Hiding the widget clears its status line immediately. The status line reports `syncing` during refresh and then the current attention count; `counts-only` privacy also hides the active repository there.
-
-The interactive `/fj` overlay supports filtering and action shortcuts; selecting an item pastes its fully qualified reference into the Pi editor.
+Model-visible metadata and discussion output defaults to 16 KB. Pull-request diffs, Actions job logs, and watch lists default to 32 KB. `max_bytes` can raise or lower configurable budgets but is hard-capped at 128 KB; truncation is explicit, and paginated results retain recovery metadata. Cross-server search includes a bounded, single-line body preview; use the qualified result with `forgejo_issue` or `forgejo_pull` when the complete body is needed. Oversized hidden tool details are compacted before omp persists them, retaining small identifiers and recovery fields rather than duplicating full remote payloads in session history. Artifact downloads use the separate `max_download_bytes` limit and write ZIP bytes to a deliberate workspace path instead of returning the archive to the model.
 
 ## Incremental conversations
 
-Issue and pull-request `updates` calls keep a lightweight cursor in the current Pi session:
+Issue and pull-request `updates` calls keep a lightweight cursor in the current omp session:
 
 - The first call initializes a baseline without downloading historical timeline pages unless `since` is provided.
 - Later calls fetch only the relevant time window and deduplicate events by stable event versions.
 - Issue state/title changes and pull-request head SHA changes are reported with timeline events.
 - A truncated or incomplete pagination scan does not advance the cursor.
-- Cursors are intentionally in-memory and disappear when the Pi session ends.
+- Cursors are intentionally in-memory and disappear when the omp session ends.
 
 This reduces model context without persisting potentially sensitive issue bodies to disk.
 
@@ -328,7 +282,7 @@ Merge operations:
 
 ### Mutation approvals
 
-Every confirmation dialog offers: `Allow once`, `Always allow on all servers and repositories this session`, `Always allow on all servers and repositories (save globally)`, and `Cancel`. Saved approvals use stable action keys such as `pull.merge` in `allowedMutations` in the [global config](#configuration) only — a committed project config can never pre-approve mutations. Active Pi sessions re-read saved approvals before each mutation, and cross-process locking prevents concurrent sessions from overwriting each other's choices. Approved mutations (saved or session) also run without a UI, so they work in print mode; without an approval, headless sessions still fail closed.
+Every confirmation dialog offers: `Allow once`, `Always allow on all servers and repositories this session`, `Always allow on all servers and repositories (save globally)`, and `Cancel`. Saved approvals use stable action keys such as `pull.merge` in `allowedMutations` in the [global config](#configuration) only — a committed project config can never pre-approve mutations. Active omp sessions re-read saved approvals before each mutation, and cross-process locking prevents concurrent sessions from overwriting each other's choices. Approved mutations (saved or session) also run without a UI, so they work in print mode; without an approval, headless sessions still fail closed.
 
 The toolkit does not push local branches through the Forgejo API. Local Git remains the source of truth for branch creation, commits, rebases, and pushes.
 
@@ -356,13 +310,13 @@ An issue-to-draft-PR workflow that reads the full conversation, preserves accept
 
 An evidence-first review workflow that combines Forgejo metadata, timeline updates, diffs, checks, existing reviews, and local code. It builds one review draft, previews it, and submits only when the user explicitly requests publication.
 
-Skills load through resource discovery only where the toolkit is active and can be disabled with `pi config`.
+omp's plugin skill provider discovers the bundled `skills/` directory of an installed or linked package automatically. Skill entries are limited to name and description until read, so their context cost is two lines per skill; disable individual skills with `disabledExtensions: ["skill:<name>"]`.
 
 ## Security model
 
-Pi packages execute with the same operating-system permissions as Pi. Review packages before installation.
+omp packages execute with the same operating-system permissions as omp. Review packages before installation.
 
-`pi-forgejo-toolkit` enforces these boundaries:
+`omp-forgejo` enforces these boundaries:
 
 - No plaintext token configuration
 - Separate credential providers and cached credentials per server
@@ -390,18 +344,19 @@ bun run test
 bun run check
 ```
 
-`bun run check` is the required local and CI gate. The npm package ships TypeScript source because Pi loads extension modules directly; there is no generated build directory.
+`bun run check` is the required local and CI gate. The npm package ships TypeScript source because omp loads extension modules directly; there is no generated build directory.
 
 Project layout:
 
 ```text
-extensions/forgejo/       Pi extension entry point
+extensions/forgejo/       omp extension entry point
 skills/                   Issue-to-PR and PR-review workflows
 src/client.ts             Authenticated Forgejo HTTP client
 src/remote-resolver.ts    Multi-remote repository resolution
-src/dashboard/            Store, query, notifier, widget, and overlay
+src/attention.ts          Attention queries for review-request and notification watches
 src/tools/                Model-callable Forgejo tools
 src/actions.ts            Forgejo Actions request helpers
+docs/                     Banner art and compositor (`docs/banner.html` renders `docs/banner.png`)
 test/                     Deterministic Vitest contracts
 examples/forgejo.json     Multi-server configuration example
 ```
@@ -414,7 +369,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for conventions, tests, and the pull-requ
 - Changes are recorded in [CHANGELOG.md](CHANGELOG.md).
 - GitHub Actions verifies every push and pull request with Bun.
 - GitHub releases publish to npm through npm trusted publishing with provenance.
-- The `pi-package` keyword and `pi` manifest make releases discoverable in the [Pi package gallery](https://pi.dev/packages/pi-forgejo-toolkit).
+- The `omp-package` keyword and `omp` manifest make releases discoverable by omp plugin tooling.
 
 ## License
 

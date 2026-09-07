@@ -1,5 +1,3 @@
-import { parseConfig } from "./config.js";
-import type { ForgejoConfig } from "./types.js";
 import type { CommandExecutor } from "./process.js";
 
 export interface FgjInstance {
@@ -42,24 +40,4 @@ export function suggestServerAlias(hostname: string): string {
   if (labels.length > 2 && ["git", "code", "forgejo"].includes(labels[0] ?? "")) labels.shift();
   const candidate = (labels[0] ?? "forgejo").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
   return candidate || "forgejo";
-}
-
-export function buildFgjConfig(instances: FgjInstance[]): ForgejoConfig {
-  const used = new Set<string>();
-  const servers: Record<string, unknown> = {};
-  for (const instance of instances) {
-    const base = suggestServerAlias(instance.hostname);
-    let alias = base;
-    let suffix = 2;
-    while (used.has(alias)) {
-      alias = `${base}-${suffix}`;
-      suffix += 1;
-    }
-    used.add(alias);
-    servers[alias] = {
-      hostname: instance.hostname,
-      credentialProvider: "fgj",
-    };
-  }
-  return parseConfig({ servers });
 }

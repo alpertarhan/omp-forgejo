@@ -5,14 +5,14 @@
  *   SMOKE_FORGEJO_URL    base URL, e.g. http://127.0.0.1:23000
  *   SMOKE_FORGEJO_TOKEN  token of an admin user (scopes: all)
  *
- * Exercises the client, dashboard queries, timeline scanning, and both watch
+ * Exercises the client, attention queries, timeline scanning, and both watch
  * managers against live Forgejo behavior that the mocked unit suite cannot
  * verify (null bodies, Link headers, timestamp formats, and so on).
  */
 import { apiPath, ForgejoClient } from "../src/client.js";
 import type { CredentialProvider } from "../src/credentials.js";
 import { scanTimeline } from "../src/timeline.js";
-import { queryAttentionItems } from "../src/dashboard/query.js";
+import { queryAttentionItems } from "../src/attention.js";
 import {
 	SourceWatchManager,
 	type SourceWatchEmission,

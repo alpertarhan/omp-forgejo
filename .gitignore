@@ -7,7 +7,8 @@ coverage/
 !.env.example
 *.tgz
 .npmrc
-.pi/forgejo.json
-.pi/npm/
-.pi/git/
+.omp/forgejo.json
+.omp/npm/
+.omp/git/
+.smoke/
 .geto-graph/

@@ -1,7 +1,7 @@
 import type {
 	ExtensionAPI,
 	ExtensionContext,
-} from "@earendil-works/pi-coding-agent";
+} from "@oh-my-pi/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
 import type { ForgejoClient } from "../src/client.js";
 import type { ForgejoRuntime } from "../src/runtime.js";
@@ -113,7 +113,6 @@ function makeFixture(kind: "issue" | "pull") {
 			throw new Error(`unexpected path ${path}`);
 		},
 	);
-	const refresh = vi.fn(async () => undefined);
 	const runtime = {
 		sessionMutationApprovals: new Set<string>(),
 		globalConfigPath: ".test-no-forgejo-config.json",
@@ -129,9 +128,8 @@ function makeFixture(kind: "issue" | "pull") {
 			index: Number(input.ref?.match(/(\d+)$/)?.[1] ?? 9),
 		}),
 		client: () => ({ request }) as unknown as ForgejoClient,
-		dashboard: { refresh, refreshIfObserved: refresh },
 	} as unknown as ForgejoRuntime;
-	return { runtime, request, refresh };
+	return { runtime, request };
 }
 
 const signal = new AbortController().signal;
@@ -233,7 +231,7 @@ describe("forgejo_pull refs[] and prs[] batch operations", () => {
 	});
 
 	it("batch create posts every pr and reports per-item outcomes", async () => {
-		const { runtime, request, refresh } = makeFixture("pull");
+		const { runtime, request } = makeFixture("pull");
 		const tool = captureTool(registerPullTool, runtime);
 		const result = toolResultOf(
 			await tool.execute(
@@ -269,7 +267,6 @@ describe("forgejo_pull refs[] and prs[] batch operations", () => {
 				},
 			}),
 		);
-		expect(refresh).toHaveBeenCalled();
 	});
 
 	it("rejects prs entries missing required fields before creating anything", async () => {

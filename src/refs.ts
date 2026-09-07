@@ -1,88 +1,138 @@
 import type { ForgejoServerConfig, RepoRef, ResourceRef } from "./types.js";
 
+/**
+ * Grammar shared by every ref-validation error site. The bare repository form
+ * is accepted by resolveRepo targets (list/create/search) and /fj-open;
+ * resource actions additionally require an index.
+ */
+export const REF_FORMAT_HINT =
+  "expected 'server:owner/repo#N' (issue), 'server:owner/repo!N' (pull), 'server:owner/repo' (repo), or 'fj://server/owner/repo/<issue|pull>/<N>'; for git tags/branches use the git_ref parameter";
+
 const SEGMENT_PATTERN = "[A-Za-z0-9._-]+";
 const SHORT_REF = new RegExp(
-	`^(${SEGMENT_PATTERN}):(${SEGMENT_PATTERN})/(${SEGMENT_PATTERN})([#!])(\\d+)$`,
+  `^(${SEGMENT_PATTERN}):(${SEGMENT_PATTERN})/(${SEGMENT_PATTERN})([#!])(\\d+)$`,
+);
+const SHORT_REPO_REF = new RegExp(
+  `^(${SEGMENT_PATTERN}):(${SEGMENT_PATTERN})/(${SEGMENT_PATTERN})$`,
 );
 
 function validateSegment(value: string, field: string): string {
-	if (!new RegExp(`^${SEGMENT_PATTERN}$`).test(value)) {
-		throw new Error(`invalid Forgejo ${field}: ${value}`);
-	}
-	return value;
+  if (!new RegExp(`^${SEGMENT_PATTERN}$`).test(value)) {
+    throw new Error(`invalid Forgejo ${field}: ${value}`);
+  }
+  return value;
 }
 
 export function parseResourceRef(value: string): ResourceRef | undefined {
-	const input = value.trim();
-	const shortMatch = SHORT_REF.exec(input);
-	if (shortMatch) {
-		const [, server, owner, repo, marker, rawIndex] = shortMatch;
-		if (!server || !owner || !repo || !marker || !rawIndex) return undefined;
-		const index = Number(rawIndex);
-		if (!Number.isSafeInteger(index) || index < 1) return undefined;
-		return {
-			server,
-			owner,
-			repo,
-			kind: marker === "#" ? "issue" : "pull",
-			index,
-		};
-	}
+  const input = value.trim();
+  const shortMatch = SHORT_REF.exec(input);
+  if (shortMatch) {
+    const [, server, owner, repo, marker, rawIndex] = shortMatch;
+    if (!server || !owner || !repo || !marker || !rawIndex) return undefined;
+    const index = Number(rawIndex);
+    if (!Number.isSafeInteger(index) || index < 1) return undefined;
+    return {
+      server,
+      owner,
+      repo,
+      kind: marker === "#" ? "issue" : "pull",
+      index,
+    };
+  }
 
-	if (!input.startsWith("fj://")) return undefined;
-	let url: URL;
-	try {
-		url = new URL(input);
-	} catch {
-		return undefined;
-	}
-	let parts: string[];
-	try {
-		parts = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
-	} catch {
-		return undefined;
-	}
-	if (parts.length !== 4) return undefined;
-	const [owner, repo, rawKind, rawIndex] = parts;
-	if (!owner || !repo || !rawKind || !rawIndex || !/^\d+$/.test(rawIndex))
-		return undefined;
-	const index = Number(rawIndex);
-	if (!Number.isSafeInteger(index) || index < 1) return undefined;
-	if (rawKind !== "issues" && rawKind !== "pulls") return undefined;
-	try {
-		return {
-			server: validateSegment(url.hostname, "server"),
-			owner: validateSegment(owner, "owner"),
-			repo: validateSegment(repo, "repository"),
-			kind: rawKind === "issues" ? "issue" : "pull",
-			index,
-		};
-	} catch {
-		return undefined;
-	}
+  if (!input.startsWith("fj://")) return undefined;
+  let url: URL;
+  try {
+    url = new URL(input);
+  } catch {
+    return undefined;
+  }
+  let parts: string[];
+  try {
+    parts = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
+  } catch {
+    return undefined;
+  }
+  if (parts.length !== 4) return undefined;
+  const [owner, repo, rawKind, rawIndex] = parts;
+  if (!owner || !repo || !rawKind || !rawIndex || !/^\d+$/.test(rawIndex))
+    return undefined;
+  const index = Number(rawIndex);
+  if (!Number.isSafeInteger(index) || index < 1) return undefined;
+  if (rawKind !== "issues" && rawKind !== "pulls") return undefined;
+  try {
+    return {
+      server: validateSegment(url.hostname, "server"),
+      owner: validateSegment(owner, "owner"),
+      repo: validateSegment(repo, "repository"),
+      kind: rawKind === "issues" ? "issue" : "pull",
+      index,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+export function parseRepoRef(value: string): RepoRef | undefined {
+  const input = value.trim();
+  const shortMatch = SHORT_REPO_REF.exec(input);
+  if (shortMatch) {
+    const [, server, owner, repo] = shortMatch;
+    if (!server || !owner || !repo) return undefined;
+    return { server, owner, repo };
+  }
+  if (!input.startsWith("fj://")) return undefined;
+  let url: URL;
+  try {
+    url = new URL(input);
+  } catch {
+    return undefined;
+  }
+  let parts: string[];
+  try {
+    parts = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
+  } catch {
+    return undefined;
+  }
+  if (parts.length !== 2) return undefined;
+  const [owner, repo] = parts;
+  if (!owner || !repo) return undefined;
+  try {
+    return {
+      server: validateSegment(url.hostname, "server"),
+      owner: validateSegment(owner, "owner"),
+      repo: validateSegment(repo, "repository"),
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 export function formatResourceRef(ref: ResourceRef): string {
-	return `${ref.server}:${ref.owner}/${ref.repo}${ref.kind === "issue" ? "#" : "!"}${ref.index}`;
+  return `${ref.server}:${ref.owner}/${ref.repo}${ref.kind === "issue" ? "#" : "!"}${ref.index}`;
 }
 
 export function formatCanonicalRef(ref: ResourceRef): string {
-	const kind = ref.kind === "issue" ? "issues" : "pulls";
-	return `fj://${ref.server}/${encodeURIComponent(ref.owner)}/${encodeURIComponent(ref.repo)}/${kind}/${ref.index}`;
+  const kind = ref.kind === "issue" ? "issues" : "pulls";
+  return `fj://${ref.server}/${encodeURIComponent(ref.owner)}/${encodeURIComponent(ref.repo)}/${kind}/${ref.index}`;
+}
+
+export function formatCanonicalRepoRef(ref: RepoRef): string {
+  return `fj://${ref.server}/${encodeURIComponent(ref.owner)}/${encodeURIComponent(ref.repo)}`;
 }
 
 export function formatRepoRef(ref: RepoRef): string {
-	return `${ref.server}:${ref.owner}/${ref.repo}`;
+  return `${ref.server}:${ref.owner}/${ref.repo}`;
 }
 
 export function resourceWebUrl(
-	ref: ResourceRef,
-	server: ForgejoServerConfig,
+  ref: ResourceRef,
+  server: ForgejoServerConfig,
 ): string {
-	const kind = ref.kind === "issue" ? "issues" : "pulls";
-	return `${server.baseUrl}/${encodeURIComponent(ref.owner)}/${encodeURIComponent(ref.repo)}/${kind}/${ref.index}`;
+  const kind = ref.kind === "issue" ? "issues" : "pulls";
+  return `${server.baseUrl}/${encodeURIComponent(ref.owner)}/${encodeURIComponent(ref.repo)}/${kind}/${ref.index}`;
 }
 
 export function repoWebUrl(ref: RepoRef, server: ForgejoServerConfig): string {
-	return `${server.baseUrl}/${encodeURIComponent(ref.owner)}/${encodeURIComponent(ref.repo)}`;
+  return `${server.baseUrl}/${encodeURIComponent(ref.owner)}/${encodeURIComponent(ref.repo)}`;
 }

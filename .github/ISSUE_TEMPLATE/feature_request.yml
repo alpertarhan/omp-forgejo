@@ -1,5 +1,5 @@
 name: Feature request
-description: Propose a focused Forgejo or Pi workflow improvement
+description: Propose a focused Forgejo or omp workflow improvement
 title: "feature: "
 labels: [enhancement, triage]
 body:

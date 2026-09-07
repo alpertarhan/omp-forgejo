@@ -1,4 +1,4 @@
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 import { Type } from "typebox";
 import { apiPath, type ForgejoClient } from "../client.js";
 import { loadGlobalAllowedMutations } from "../config.js";
@@ -451,7 +451,6 @@ function requestSignal(signal?: AbortSignal): { signal?: AbortSignal } {
 }
 
 export async function createConversationComment(
-	runtime: ForgejoRuntime,
 	client: ForgejoClient,
 	commentsPath: string,
 	reference: string,
@@ -465,7 +464,6 @@ export async function createConversationComment(
 		body: { body },
 		...requestSignal(signal),
 	});
-	await runtime.dashboard.refreshIfObserved(signal);
 	return toolResult(
 		`Commented on ${reference}\n\n${formatForgejoComment(response.data)}`,
 		response.data,
@@ -515,7 +513,6 @@ export async function handleConversationComment(
 			body: { body },
 			...requestSignal(signal),
 		});
-		await runtime.dashboard.refreshIfObserved(signal);
 		return toolResult(
 			`Edited comment ${commentId} on ${reference}\n\n${formatForgejoComment(response.data)}`,
 			response.data,
@@ -535,7 +532,6 @@ export async function handleConversationComment(
 		method: "DELETE",
 		...requestSignal(signal),
 	});
-	await runtime.dashboard.refreshIfObserved(signal);
 	return toolResult(`Deleted comment ${commentId} from ${reference}`, {
 		reference,
 		commentId,
@@ -581,7 +577,6 @@ export async function handleSubscription(
 			`Forgejo did not ${expected ? "subscribe to" : "unsubscribe from"} ${reference}`,
 		);
 	}
-	await runtime.dashboard.refreshIfObserved(signal);
 	return toolResult(
 		`${expected ? "Subscribed to" : "Unsubscribed from"} ${reference} as @${user}`,
 		{
@@ -600,7 +595,6 @@ interface PlanningMutationParams {
 }
 
 interface PlanningMutationOptions<T extends PlanningResource> {
-	runtime: ForgejoRuntime;
 	client: ForgejoClient;
 	ref: ResourceRef;
 	reference: string;
@@ -615,7 +609,6 @@ export async function handlePlanningMutation<T extends PlanningResource>(
 	options: PlanningMutationOptions<T>,
 ): Promise<ToolResult> {
 	const {
-		runtime,
 		client,
 		ref,
 		reference,
@@ -658,7 +651,6 @@ export async function handlePlanningMutation<T extends PlanningResource>(
 				`Forgejo did not apply the requested labels to ${reference}`,
 			);
 		}
-		await runtime.dashboard.refreshIfObserved(signal);
 		return toolResult(
 			`Set labels on ${reference}: ${params.labels.join(", ") || "none"}`,
 			response.data,
@@ -686,7 +678,6 @@ export async function handlePlanningMutation<T extends PlanningResource>(
 				`Forgejo did not apply the requested assignees to ${reference}`,
 			);
 		}
-		await runtime.dashboard.refreshIfObserved(signal);
 		return toolResult(
 			summary("Updated assignees on", response.data, reference),
 			response.data,
@@ -714,7 +705,6 @@ export async function handlePlanningMutation<T extends PlanningResource>(
 			throw new Error(
 				`Forgejo did not ${id === 0 ? "clear" : "set"} the requested milestone on ${reference}`,
 			);
-		await runtime.dashboard.refreshIfObserved(signal);
 		return toolResult(
 			`${id === 0 ? "Cleared milestone on" : `Set milestone '${response.data.milestone?.title ?? id}' on`} ${reference}`,
 			response.data,
@@ -742,7 +732,6 @@ export async function handlePlanningMutation<T extends PlanningResource>(
 			`Forgejo did not ${dueDate === undefined ? "clear" : "set"} the requested due date on ${reference}`,
 		);
 	}
-	await runtime.dashboard.refreshIfObserved(signal);
 	return toolResult(
 		`${dueDate === undefined ? "Cleared due date on" : `Set due date ${dueDate} on`} ${reference}`,
 		response.data,

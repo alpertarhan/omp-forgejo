@@ -1,583 +1,336 @@
 import { homedir } from "node:os";
 import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import type {
-	ExtensionAPI,
-	ExtensionContext,
-} from "@earendil-works/pi-coding-agent";
-import type { AutocompleteProvider } from "@earendil-works/pi-tui";
+import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import { setConfigHostContext } from "./config.js";
 import { runForgejoSetup, type SetupStage } from "./setup.js";
-import { createForgejoAutocompleteProvider } from "./dashboard/autocomplete.js";
-import { DashboardNotifier } from "./dashboard/notifier.js";
-import { DashboardOverlay } from "./dashboard/overlay.js";
-import { markNotificationRead } from "./dashboard/query.js";
-import { DashboardWidget, renderDashboardStatus } from "./dashboard/widget.js";
 import {
-	formatRepoRef,
-	parseResourceRef,
-	repoWebUrl,
-	resourceWebUrl,
+  formatRepoRef,
+  parseRepoRef,
+  parseResourceRef,
+  REF_FORMAT_HINT,
+  repoWebUrl,
+  resourceWebUrl,
 } from "./refs.js";
 import { createRuntime, type ForgejoRuntime } from "./runtime.js";
 import { SourceWatchManager } from "./source-watch.js";
 import { registerForgejoTools } from "./tools/index.js";
-import type { DashboardItem, DashboardScope, RepoResolution } from "./types.js";
+import type { RepoResolution } from "./types.js";
 import { WatchManager } from "./watch.js";
 import { sendWatchNotification } from "./watch-notification.js";
 
-export function dashboardStartsAutomatically(
-	enabled: boolean,
-	status: RepoResolution["status"],
-): boolean {
-	return enabled && status !== "none";
-}
-
 export function forgejoToolkitActive(
-	serverCount: number,
-	status: RepoResolution["status"],
+  serverCount: number,
+  status: RepoResolution["status"],
 ): boolean {
-	return serverCount > 0 && status !== "none";
-}
-
-export function forgejoSkillPaths(): string[] {
-	return [fileURLToPath(new URL("../skills", import.meta.url))];
+  return serverCount > 0 && status !== "none";
 }
 
 function parseHttpUrl(url: string): URL {
-	let parsed: URL;
-	try {
-		parsed = new URL(url);
-	} catch {
-		throw new Error("Forgejo link must be an absolute http(s) URL");
-	}
-	if (parsed.protocol !== "https:" && parsed.protocol !== "http:")
-		throw new Error("Forgejo link must use http or https");
-	return parsed;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error("Forgejo link must be an absolute http(s) URL");
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:")
+    throw new Error("Forgejo link must use http or https");
+  return parsed;
 }
 
 export function forgejoWebUrl(url: string, expectedBaseUrl?: string): URL {
-	const target = parseHttpUrl(url);
-	if (!expectedBaseUrl) return target;
-	const base = parseHttpUrl(expectedBaseUrl);
-	const basePath = base.pathname.replace(/\/+$/, "");
-	if (
-		target.origin !== base.origin ||
-		(basePath &&
-			target.pathname !== basePath &&
-			!target.pathname.startsWith(`${basePath}/`))
-	) {
-		throw new Error("Forgejo link leaves the configured server URL");
-	}
-	return target;
+  const target = parseHttpUrl(url);
+  if (!expectedBaseUrl) return target;
+  const base = parseHttpUrl(expectedBaseUrl);
+  const basePath = base.pathname.replace(/\/+$/, "");
+  if (
+    target.origin !== base.origin ||
+    (basePath &&
+      target.pathname !== basePath &&
+      !target.pathname.startsWith(`${basePath}/`))
+  ) {
+    throw new Error("Forgejo link leaves the configured server URL");
+  }
+  return target;
 }
 
 export function externalOpenCommand(
-	url: string,
-	platform: NodeJS.Platform = process.platform,
+  url: string,
+  platform: NodeJS.Platform = process.platform,
 ): { command: string; args: string[] } {
-	const normalizedUrl = forgejoWebUrl(url).href;
-	return platform === "darwin"
-		? { command: "open", args: [normalizedUrl] }
-		: platform === "win32"
-			? { command: "explorer.exe", args: [normalizedUrl] }
-			: { command: "xdg-open", args: [normalizedUrl] };
+  const normalizedUrl = forgejoWebUrl(url).href;
+  return platform === "darwin"
+    ? { command: "open", args: [normalizedUrl] }
+    : platform === "win32"
+      ? { command: "explorer.exe", args: [normalizedUrl] }
+      : { command: "xdg-open", args: [normalizedUrl] };
 }
 
 async function openExternal(
-	pi: ExtensionAPI,
-	url: string,
-	expectedBaseUrl?: string,
+  pi: ExtensionAPI,
+  url: string,
+  expectedBaseUrl?: string,
 ): Promise<void> {
-	const target = forgejoWebUrl(url, expectedBaseUrl);
-	const { command, args } = externalOpenCommand(target.href);
-	const result = await pi.exec(command, args, { timeout: 5_000 });
-	if (result.code !== 0)
-		throw new Error(result.stderr.trim() || `failed to open ${url}`);
+  const target = forgejoWebUrl(url, expectedBaseUrl);
+  const { command, args } = externalOpenCommand(target.href);
+  const result = await pi.exec(command, args, { timeout: 5_000 });
+  if (result.code !== 0)
+    throw new Error(result.stderr.trim() || `failed to open ${url}`);
 }
 
 export default function forgejoExtension(pi: ExtensionAPI): void {
-	let runtime: ForgejoRuntime | undefined;
-	let forgejoActive = false;
-	let toolkitDeactivatedByUs = false;
-	let watchManager: WatchManager | undefined;
-	let sourceWatchManager: SourceWatchManager | undefined;
-	let startupError: Error | undefined;
-	let refreshTimer: NodeJS.Timeout | undefined;
-	let notifier: DashboardNotifier | undefined;
-	let statusUnsubscribe: (() => void) | undefined;
-	let widgetScope: DashboardScope = "all";
-	let widgetVisible = false;
-	const widgets = new Set<DashboardWidget>();
+  let runtime: ForgejoRuntime | undefined;
+  let toolkitDeactivatedByUs = false;
+  let watchManager: WatchManager | undefined;
+  let sourceWatchManager: SourceWatchManager | undefined;
+  let startupError: Error | undefined;
 
-	const requireRuntime = (): ForgejoRuntime => {
-		if (runtime) return runtime;
-		if (startupError) throw startupError;
-		throw new Error("Forgejo extension is still initializing");
-	};
+  const requireRuntime = (): ForgejoRuntime => {
+    if (runtime) return runtime;
+    if (startupError) throw startupError;
+    throw new Error("Forgejo extension is still initializing");
+  };
 
-	const stopRefreshTimer = (): void => {
-		if (refreshTimer) clearInterval(refreshTimer);
-		refreshTimer = undefined;
-	};
+  const cleanup = (): void => {
+    watchManager?.close();
+    watchManager = undefined;
+    sourceWatchManager?.close();
+    sourceWatchManager = undefined;
+    runtime?.close();
+    runtime = undefined;
+  };
 
-	const cleanup = (): void => {
-		watchManager?.close();
-		watchManager = undefined;
-		sourceWatchManager?.close();
-		sourceWatchManager = undefined;
-		stopRefreshTimer();
-		notifier?.close();
-		notifier = undefined;
-		statusUnsubscribe?.();
-		statusUnsubscribe = undefined;
-		for (const widget of widgets) widget.close();
-		widgets.clear();
-		runtime?.close();
-		runtime = undefined;
-	};
+  pi.registerCommand("fj-setup", {
+    description: "Run the guided Forgejo server, credential, and tool setup",
+    handler: async (args, ctx) => {
+      if (!ctx.hasUI) throw new Error("/fj-setup requires an interactive UI");
+      const labels: Record<SetupStage, string> = {
+        scope: "Scope",
+        servers: "Servers",
+        tools: "Tools",
+        review: "Review",
+      };
+      const updateProgress = (
+        stage: SetupStage,
+        step: number,
+        total: number,
+      ): void => {
+        ctx.ui.setStatus(
+          "forgejo-setup",
+          `setup ${step}/${total} · ${labels[stage]}`,
+        );
+        if (ctx.mode === "tui") {
+          const stages: SetupStage[] = ["scope", "servers", "tools", "review"];
+          ctx.ui.setWidget("forgejo-setup", [
+            `Forgejo Setup  ${step}/${total}`,
+            stages
+              .map(
+                (value, index) =>
+                  `${value === stage ? "[" : " "}${index + 1} ${labels[value]}${value === stage ? "]" : " "}`,
+              )
+              .join("  "),
+            "Native guided setup; Esc cancels safely. API token values are never written.",
+          ]);
+        }
+      };
+      try {
+        const result = await runForgejoSetup({
+          args,
+          cwd: ctx.cwd,
+          ui: ctx.ui,
+          exec: async (command, commandArgs, options) =>
+            pi.exec(command, commandArgs, options),
+          onStage: updateProgress,
+        });
+        if (!result) {
+          ctx.ui.notify(
+            "Forgejo setup cancelled; no configuration was changed.",
+            "info",
+          );
+          return;
+        }
+        ctx.ui.notify(`Forgejo config written: ${result.target}`, "info");
+        await ctx.reload();
+      } finally {
+        ctx.ui.setStatus("forgejo-setup", undefined);
+        if (ctx.mode === "tui") ctx.ui.setWidget("forgejo-setup", undefined);
+      }
+    },
+  });
+  const forgejoTools = registerForgejoTools(pi, requireRuntime, () => {
+    if (!watchManager)
+      throw new Error("Forgejo watch manager is unavailable before session start");
+    return watchManager;
+  }, () => {
+    if (!sourceWatchManager)
+      throw new Error(
+        "Forgejo source watch manager is unavailable before session start",
+      );
+    return sourceWatchManager;
+  });
 
-	const installWidget = (ctx: ExtensionContext): void => {
-		const current = requireRuntime();
-		if (ctx.mode !== "tui") return;
-		for (const widget of widgets) widget.close();
-		widgets.clear();
-		statusUnsubscribe?.();
-		ctx.ui.setWidget("forgejo-dashboard", (tui, theme) => {
-			const widget = new DashboardWidget(
-				current.dashboard,
-				theme,
-				current.config.dashboard.privacy,
-				widgetScope,
-				() => tui.requestRender(),
-			);
-			widgets.add(widget);
-			return widget;
-		});
-		const updateStatus = (): void => {
-			ctx.ui.setStatus(
-				"forgejo",
-				renderDashboardStatus(
-					current.dashboard.snapshot(),
-					current.config.dashboard.privacy,
-					widgetScope,
-				),
-			);
-		};
-		statusUnsubscribe = current.dashboard.subscribe(updateStatus);
-		updateStatus();
-		widgetVisible = true;
-	};
+  pi.registerCommand("fj-context", {
+    description: "Show the active Forgejo server and repository",
+    handler: async (_args, ctx) => {
+      const current = requireRuntime();
+      const repo = current.currentRepo();
+      const reason =
+        current.repoResolution.status === "resolved"
+          ? "repository context is not selected"
+          : current.repoResolution.reason;
+      ctx.ui.notify(
+        repo ? `Forgejo: ${formatRepoRef(repo)}` : `Forgejo: ${reason}`,
+        repo ? "info" : "warning",
+      );
+    },
+  });
 
-	const refresh = async (signal?: AbortSignal) => {
-		const current = requireRuntime();
-		const [, snapshot] = await Promise.all([
-			current.capabilities.refresh(signal, true),
-			current.dashboard.refresh(signal),
-		]);
-		return snapshot;
-	};
+  pi.registerCommand("fj-server", {
+    description: "Select a Forgejo server for this session",
+    handler: async (args, ctx) => {
+      const current = requireRuntime();
+      let alias = args.trim();
+      if (!alias) {
+        if (!ctx.hasUI)
+          throw new Error("server alias is required without an interactive UI");
+        alias =
+          (await ctx.ui.select("Forgejo server", current.clients.aliases())) ?? "";
+      }
+      if (!alias) return;
+      const repo = current.selectServer(alias);
+      ctx.ui.notify(
+        repo
+          ? `Selected ${formatRepoRef(repo)}`
+          : `Selected ${alias}; repository context remains explicit`,
+        "info",
+      );
+    },
+  });
 
-	const runInBackground = (
-		ctx: ExtensionContext,
-		operation: Promise<unknown>,
-	): void => {
-		void operation.catch((error: unknown) => {
-			if (ctx.hasUI)
-				ctx.ui.notify(
-					error instanceof Error ? error.message : String(error),
-					"warning",
-				);
-		});
-	};
+  pi.registerCommand("fj-health", {
+    description: "Check every configured Forgejo server and token",
+    handler: async (_args, ctx) => {
+      const current = requireRuntime();
+      const snapshot = await current.capabilities.refresh(undefined, true);
+      const lines = current.clients
+        .aliases()
+        .map((alias) =>
+          snapshot.values[alias]
+            ? `${alias}: ok (Forgejo ${snapshot.values[alias]?.version})`
+            : `${alias}: ${snapshot.errors[alias] ?? "error"}`,
+        );
+      ctx.ui.notify(
+        lines.join("\n"),
+        Object.keys(snapshot.errors).length > 0 ? "warning" : "info",
+      );
+    },
+  });
 
-	const syncDashboardActivity = (
-		ctx: ExtensionContext,
-		refreshNow: boolean,
-	): void => {
-		const current = runtime;
-		if (!current || ctx.mode !== "tui" || (!widgetVisible && !notifier)) {
-			stopRefreshTimer();
-			return;
-		}
-		if (!refreshTimer) {
-			refreshTimer = setInterval(() => {
-				const active = runtime;
-				if (active && !active.dashboard.snapshot().refreshing)
-					runInBackground(ctx, active.dashboard.refresh());
-			}, current.config.dashboard.refreshSeconds * 1_000);
-			refreshTimer.unref();
-		}
-		if (refreshNow) runInBackground(ctx, refresh());
-	};
+  pi.registerCommand("fj-open", {
+    description:
+      "Open the active Forgejo repository or a qualified issue/PR reference",
+    handler: async (args) => {
+      const current = requireRuntime();
+      const value = args.trim();
+      if (value) {
+        const resource = parseResourceRef(value);
+        if (resource) {
+          const server = current.config.servers[resource.server];
+          if (!server) throw new Error(`unknown server '${resource.server}'`);
+          await openExternal(pi, resourceWebUrl(resource, server), server.baseUrl);
+          return;
+        }
+        const repo = parseRepoRef(value);
+        if (repo) {
+          const server = current.config.servers[repo.server];
+          if (!server) throw new Error(`unknown server '${repo.server}'`);
+          await openExternal(pi, repoWebUrl(repo, server), server.baseUrl);
+          return;
+        }
+        throw new Error(
+          `invalid Forgejo reference '${value}' — ${REF_FORMAT_HINT}`,
+        );
+      }
+      const repo = current.currentRepo();
+      if (!repo) throw new Error("no active Forgejo repository");
+      const server = current.config.servers[repo.server];
+      if (!server) throw new Error(`unknown server '${repo.server}'`);
+      await openExternal(pi, repoWebUrl(repo, server), server.baseUrl);
+    },
+  });
 
-	pi.registerCommand("fj-setup", {
-		description: "Run the guided Forgejo server, credential, and dashboard setup",
-		handler: async (args, ctx) => {
-			if (!ctx.hasUI) throw new Error("/fj-setup requires an interactive UI");
-			const labels: Record<SetupStage, string> = {
-				scope: "Scope",
-				servers: "Servers",
-				dashboard: "Dashboard",
-				tools: "Tools",
-				review: "Review",
-			};
-			const updateProgress = (
-				stage: SetupStage,
-				step: number,
-				total: number,
-			): void => {
-				ctx.ui.setStatus(
-					"forgejo-setup",
-					`setup ${step}/${total} · ${labels[stage]}`,
-				);
-				if (ctx.mode === "tui") {
-					const stages: SetupStage[] = [
-						"scope",
-						"servers",
-						"dashboard",
-						"tools",
-						"review",
-					];
-					ctx.ui.setWidget("forgejo-setup", [
-						`Forgejo Setup  ${step}/${total}`,
-						stages
-							.map(
-								(value, index) =>
-									`${value === stage ? "[" : " "}${index + 1} ${labels[value]}${value === stage ? "]" : " "}`,
-							)
-							.join("  "),
-						"Native guided setup; Esc cancels safely. API token values are never written.",
-					]);
-				}
-			};
-			try {
-				const result = await runForgejoSetup({
-					args,
-					cwd: ctx.cwd,
-					ui: ctx.ui,
-					exec: async (command, commandArgs, options) =>
-						pi.exec(command, commandArgs, options),
-					onStage: updateProgress,
-				});
-				if (!result) {
-					ctx.ui.notify(
-						"Forgejo setup cancelled; no configuration was changed.",
-						"info",
-					);
-					return;
-				}
-				ctx.ui.notify(`Forgejo config written: ${result.target}`, "info");
-				await ctx.reload();
-			} finally {
-				ctx.ui.setStatus("forgejo-setup", undefined);
-				if (ctx.mode === "tui") ctx.ui.setWidget("forgejo-setup", undefined);
-			}
-		},
-	});
-	const forgejoTools = registerForgejoTools(pi, requireRuntime, () => {
-		if (!watchManager)
-			throw new Error("Forgejo watch manager is unavailable before session start");
-		return watchManager;
-	}, () => {
-		if (!sourceWatchManager)
-			throw new Error(
-				"Forgejo source watch manager is unavailable before session start",
-			);
-		return sourceWatchManager;
-	});
+  pi.on("session_start", async (_event, ctx) => {
+    // omp-native config location: the active agent directory follows
+    // profiles (~/.omp/profiles/<name>/agent) and PI_CODING_AGENT_DIR,
+    // the relocation variable omp honors. Resolved from the environment
+    // (never a pi-coding-agent import, which would pull optional
+    // dependencies into build graphs).
+    const profile = process.env.OMP_PROFILE?.trim();
+    setConfigHostContext({
+      agentDir:
+        process.env.PI_CODING_AGENT_DIR?.trim() ||
+        (profile
+          ? resolve(homedir(), ".omp", "profiles", profile, "agent")
+          : resolve(homedir(), ".omp", "agent")),
+    });
+    forgejoTools.reset();
+    cleanup();
+    startupError = undefined;
+    try {
+      runtime = await createRuntime(
+        ctx.cwd,
+        async (command, args, options) => pi.exec(command, args, options),
+        process.env,
+        fetch,
+        ctx.isProjectTrusted(),
+      );
+    } catch (error) {
+      startupError = error instanceof Error ? error : new Error(String(error));
+      if (ctx.hasUI) ctx.ui.notify(startupError.message, "warning");
+      return;
+    }
+    const forgejoActive = forgejoToolkitActive(
+      runtime.clients.aliases().length,
+      runtime.repoResolution.status,
+    );
+    if (!forgejoActive) {
+      // Outside a Forgejo repository the toolkit stays entirely out of
+      // the model context: no tools, no prompts. (Skills ship with the
+      // package and are discovered by omp's plugin provider regardless.)
+      pi.setActiveTools(
+        pi.getActiveTools().filter((name) => !name.startsWith("forgejo_")),
+      );
+      toolkitDeactivatedByUs = true;
+      return;
+    }
+    if (toolkitDeactivatedByUs) {
+      // A resumed session in a Forgejo repository restores the bootstrap
+      // tools this extension removed earlier.
+      const active = pi.getActiveTools();
+      const missing = ["forgejo_context", "forgejo_tools"].filter(
+        (name) => !active.includes(name),
+      );
+      if (missing.length > 0) pi.setActiveTools([...active, ...missing]);
+      toolkitDeactivatedByUs = false;
+    }
+    const currentManager = new WatchManager(
+      (server) => requireRuntime().client(server),
+      (emission) => {
+        if (watchManager === currentManager) sendWatchNotification(pi, emission);
+      },
+    );
+    watchManager = currentManager;
+    const currentSourceManager = new SourceWatchManager(
+      (server) => requireRuntime().client(server),
+      () => runtime?.clients.aliases() ?? [],
+      (emission) => {
+        if (sourceWatchManager === currentSourceManager)
+          sendWatchNotification(pi, emission);
+      },
+    );
+    sourceWatchManager = currentSourceManager;
+  });
 
-	pi.registerCommand("fj-context", {
-		description: "Show the active Forgejo server and repository",
-		handler: async (_args, ctx) => {
-			const current = requireRuntime();
-			const repo = current.currentRepo();
-			const reason =
-				current.repoResolution.status === "resolved"
-					? "repository context is not selected"
-					: current.repoResolution.reason;
-			ctx.ui.notify(
-				repo ? `Forgejo: ${formatRepoRef(repo)}` : `Forgejo: ${reason}`,
-				repo ? "info" : "warning",
-			);
-		},
-	});
-
-	pi.registerCommand("fj-server", {
-		description: "Select a Forgejo server for this session",
-		handler: async (args, ctx) => {
-			const current = requireRuntime();
-			let alias = args.trim();
-			if (!alias) {
-				if (!ctx.hasUI)
-					throw new Error("server alias is required without an interactive UI");
-				alias =
-					(await ctx.ui.select("Forgejo server", current.clients.aliases())) ?? "";
-			}
-			if (!alias) return;
-			const repo = current.selectServer(alias);
-			ctx.ui.notify(
-				repo
-					? `Selected ${formatRepoRef(repo)}`
-					: `Selected ${alias}; repository context remains explicit`,
-				"info",
-			);
-			runInBackground(ctx, current.dashboard.refreshIfObserved());
-		},
-	});
-
-	pi.registerCommand("fj-health", {
-		description: "Check every configured Forgejo server and token",
-		handler: async (_args, ctx) => {
-			const current = requireRuntime();
-			const snapshot = await current.capabilities.refresh(undefined, true);
-			const lines = current.clients
-				.aliases()
-				.map((alias) =>
-					snapshot.values[alias]
-						? `${alias}: ok (Forgejo ${snapshot.values[alias]?.version})`
-						: `${alias}: ${snapshot.errors[alias] ?? "error"}`,
-				);
-			ctx.ui.notify(
-				lines.join("\n"),
-				Object.keys(snapshot.errors).length > 0 ? "warning" : "info",
-			);
-		},
-	});
-
-	pi.registerCommand("fj-refresh", {
-		description: "Refresh the Forgejo dashboard immediately",
-		handler: async (_args, ctx) => {
-			const snapshot = await refresh();
-			const degraded = Object.values(snapshot.servers)
-				.filter((server) => server.health !== "ready")
-				.map((server) => `${server.alias} (${server.health})`);
-			ctx.ui.notify(
-				degraded.length > 0
-					? `Forgejo refreshed with degraded servers: ${degraded.join(", ")}`
-					: `Forgejo refreshed: ${Object.keys(snapshot.servers).length} servers`,
-				degraded.length > 0 ? "warning" : "info",
-			);
-		},
-	});
-
-	pi.registerCommand("fj-widget", {
-		description: "Show, hide, or scope the compact Forgejo dashboard widget",
-		handler: async (args, ctx) => {
-			if (ctx.mode !== "tui") return;
-			const command = args.trim().toLowerCase();
-			const action = command || (widgetVisible ? "off" : "on");
-			if (action === "off") {
-				ctx.ui.setWidget("forgejo-dashboard", undefined);
-				for (const widget of widgets) widget.close();
-				widgets.clear();
-				statusUnsubscribe?.();
-				statusUnsubscribe = undefined;
-				ctx.ui.setStatus("forgejo", undefined);
-				widgetVisible = false;
-				syncDashboardActivity(ctx, false);
-				ctx.ui.notify("Forgejo widget hidden", "info");
-				return;
-			}
-			if (action !== "on" && action !== "all" && action !== "current")
-				throw new Error("usage: /fj-widget [on|off|all|current]");
-			if (action === "all" || action === "current") {
-				widgetScope = action;
-				requireRuntime().dashboard.setScope(action);
-			}
-			installWidget(ctx);
-			syncDashboardActivity(ctx, true);
-			ctx.ui.notify(`Forgejo widget visible (${widgetScope})`, "info");
-		},
-	});
-
-	pi.registerCommand("fj-open", {
-		description:
-			"Open the active Forgejo repository or a qualified issue/PR reference",
-		handler: async (args) => {
-			const current = requireRuntime();
-			const value = args.trim();
-			if (value) {
-				const ref = parseResourceRef(value);
-				if (!ref) throw new Error(`invalid Forgejo reference '${value}' — expected 'server:owner/repo#N' (issue), 'server:owner/repo!N' (pull), 'server:owner/repo' (repo), or 'fj://server/owner/repo/<issue|pull>/<N>'; for git tags/branches use the git_ref parameter`);
-				const server = current.config.servers[ref.server];
-				if (!server) throw new Error(`unknown server '${ref.server}'`);
-				await openExternal(pi, resourceWebUrl(ref, server), server.baseUrl);
-				return;
-			}
-			const repo = current.currentRepo();
-			if (!repo) throw new Error("no active Forgejo repository");
-			const server = current.config.servers[repo.server];
-			if (!server) throw new Error(`unknown server '${repo.server}'`);
-			await openExternal(pi, repoWebUrl(repo, server), server.baseUrl);
-		},
-	});
-
-	pi.registerCommand("fj", {
-		description: "Open the interactive Forgejo attention dashboard",
-		handler: async (args, ctx) => {
-			if (ctx.mode !== "tui") throw new Error("/fj dashboard requires TUI mode");
-			const current = requireRuntime();
-			runInBackground(ctx, current.dashboard.refresh());
-			let overlay: DashboardOverlay | undefined;
-			const selection = await ctx.ui.custom<string | null>(
-				(tui, theme, _keybindings, done) => {
-					overlay = new DashboardOverlay(
-						current.dashboard,
-						theme,
-						() => tui.requestRender(),
-						(reference) => done(reference),
-						() => done(null),
-						(item) => {
-							const server = current.config.servers[item.server];
-							if (!server) throw new Error(`unknown server '${item.server}'`);
-							return openExternal(pi, item.webUrl, server.baseUrl);
-						},
-						() => current.dashboard.refresh().then(() => undefined),
-						async (item: DashboardItem) => {
-							if (item.sourceId === undefined)
-								throw new Error("selected item is not a notification");
-							await markNotificationRead(current.client(item.server), item.sourceId);
-							await current.dashboard.refresh();
-						},
-						args.trim() || undefined,
-					);
-					return overlay;
-				},
-				{
-					overlay: true,
-					overlayOptions: {
-						width: "80%",
-						minWidth: 54,
-						maxHeight: "80%",
-						anchor: "center",
-					},
-				},
-			);
-			overlay?.close();
-			if (selection) ctx.ui.pasteToEditor(`${selection} `);
-		},
-	});
-
-	pi.on("resources_discover", () => {
-		if (!forgejoActive) return {};
-		return { skillPaths: forgejoSkillPaths() };
-	});
-
-	pi.on("session_start", async (_event, ctx) => {
-		// Host-adaptive config location: pi sets PI_CODING_AGENT=true for
-		// extensions, omp does not. Resolved from the environment (never a
-		// pi-coding-agent import, which would pull optional dependencies into
-		// build graphs). PI_CODING_AGENT_DIR relocates the agent dir on both
-		// hosts; omp profiles live under ~/.omp/profiles/<name>/agent.
-		const isPi = process.env.PI_CODING_AGENT === "true";
-		const profile = process.env.OMP_PROFILE?.trim();
-		setConfigHostContext({
-			isOmp: !isPi,
-			agentDir:
-				process.env.PI_CODING_AGENT_DIR?.trim() ||
-				(isPi
-					? resolve(homedir(), ".pi", "agent")
-					: profile
-						? resolve(homedir(), ".omp", "profiles", profile, "agent")
-						: resolve(homedir(), ".omp", "agent")),
-		});
-		forgejoTools.reset();
-		forgejoActive = false;
-		cleanup();
-		startupError = undefined;
-		try {
-			runtime = await createRuntime(
-				ctx.cwd,
-				async (command, args, options) => pi.exec(command, args, options),
-				process.env,
-				fetch,
-				ctx.isProjectTrusted(),
-			);
-		} catch (error) {
-			startupError = error instanceof Error ? error : new Error(String(error));
-			if (ctx.hasUI) ctx.ui.notify(startupError.message, "warning");
-			return;
-		}
-		forgejoActive = forgejoToolkitActive(
-			runtime.clients.aliases().length,
-			runtime.repoResolution.status,
-		);
-		if (!forgejoActive) {
-			// Outside a Forgejo repository the toolkit stays entirely out of
-			// the model context: no tools, no skills, no prompts.
-			if (
-				typeof pi.getActiveTools === "function" &&
-				typeof pi.setActiveTools === "function"
-			) {
-				pi.setActiveTools(
-					pi
-						.getActiveTools()
-						.filter((name) => !name.startsWith("forgejo_")),
-				);
-				toolkitDeactivatedByUs = true;
-			}
-			if (ctx.mode === "tui") syncDashboardActivity(ctx, false);
-			return;
-		}
-		if (
-			toolkitDeactivatedByUs &&
-			typeof pi.getActiveTools === "function" &&
-			typeof pi.setActiveTools === "function"
-		) {
-			// A resumed session in a Forgejo repository restores the bootstrap
-			// tools this extension removed earlier.
-			const active = pi.getActiveTools();
-			const missing = ["forgejo_context", "forgejo_tools"].filter(
-				(name) => !active.includes(name),
-			);
-			if (missing.length > 0) pi.setActiveTools([...active, ...missing]);
-			toolkitDeactivatedByUs = false;
-		}
-		const currentManager = new WatchManager(
-			(server) => requireRuntime().client(server),
-			(emission) => {
-				if (watchManager === currentManager) sendWatchNotification(pi, emission);
-			},
-		);
-		watchManager = currentManager;
-		const currentSourceManager = new SourceWatchManager(
-			(server) => requireRuntime().client(server),
-			() => runtime?.clients.aliases() ?? [],
-			(emission) => {
-				if (sourceWatchManager === currentSourceManager)
-					sendWatchNotification(pi, emission);
-			},
-		);
-		sourceWatchManager = currentSourceManager;
-		const forgejoProject = runtime.repoResolution.status !== "none";
-		widgetScope = runtime.config.dashboard.scope;
-		widgetVisible = dashboardStartsAutomatically(
-			runtime.config.dashboard.enabled,
-			runtime.repoResolution.status,
-		);
-
-		if (ctx.mode === "tui") {
-			if (widgetVisible) installWidget(ctx);
-			ctx.ui.addAutocompleteProvider((current: AutocompleteProvider) =>
-				createForgejoAutocompleteProvider(current, requireRuntime().dashboard),
-			);
-			if (forgejoProject && runtime.config.dashboard.notifications !== "off") {
-				notifier = new DashboardNotifier(
-					runtime.dashboard,
-					runtime.config.dashboard.notifications,
-					(message, level) => ctx.ui.notify(message, level),
-				);
-			}
-			syncDashboardActivity(ctx, true);
-		}
-	});
-
-	pi.on("session_shutdown", async (_event, ctx) => {
-		if (ctx.hasUI) {
-			ctx.ui.setStatus("forgejo", undefined);
-			ctx.ui.setWidget("forgejo-dashboard", undefined);
-		}
-		cleanup();
-	});
+  pi.on("session_shutdown", async () => {
+    cleanup();
+  });
 }

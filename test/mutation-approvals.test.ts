@@ -10,7 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
 import { saveAllowedMutation } from "../src/config-storage.js";
 import {
@@ -27,7 +27,7 @@ const ALWAYS_SAVED =
 	"Always allow on all servers and repositories (save globally)";
 const CANCEL = "Cancel";
 const APPROVAL = "pull.merge";
-const NO_CONFIG = join(tmpdir(), `pi-forgejo-no-config-${process.pid}.json`);
+const NO_CONFIG = join(tmpdir(), `omp-forgejo-no-config-${process.pid}.json`);
 const execFileAsync = promisify(execFile);
 
 function context(choice: string | undefined, notify = vi.fn()) {

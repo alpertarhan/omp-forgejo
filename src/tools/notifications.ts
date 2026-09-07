@@ -1,5 +1,4 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { StringEnum } from "@earendil-works/pi-ai";
+import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import { Type } from "typebox";
 import { apiPath } from "../client.js";
 import type { ForgejoComment, ForgejoNotification } from "../types.js";
@@ -198,7 +197,7 @@ export function registerNotificationTool(
     description:
       "Read or update notification threads across Forgejo servers.",
     parameters: Type.Object({
-      action: StringEnum([
+      action: Type.Enum([
         "list",
         "get",
         "mark_read",
@@ -212,7 +211,7 @@ export function registerNotificationTool(
       max_bytes: modelOutputBytes(),
       resolve_latest: Type.Optional(Type.Boolean()),
       subject_type: Type.Optional(
-        StringEnum(["issue", "pull", "repository"] as const),
+        Type.Enum(["issue", "pull", "repository"] as const),
       ),
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
@@ -315,7 +314,6 @@ export function registerNotificationTool(
             }
           }),
         );
-        await runtime.dashboard.refreshIfObserved(signal);
         const succeeded = outcomes.flatMap((result) =>
           result.error ? [] : [result.server],
         );
@@ -394,7 +392,6 @@ export function registerNotificationTool(
         method: "PATCH",
         query: { "to-status": status },
       });
-      await runtime.dashboard.refreshIfObserved(signal);
       return toolResult(
         `Marked ${alias} notification ${params.id} ${status}`,
         response.data,

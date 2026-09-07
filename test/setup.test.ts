@@ -65,7 +65,7 @@ function scriptedUi(script: ScriptStep[]): ScriptedUi {
 const temporaryRoots: string[] = [];
 
 async function temporaryRoot(): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "pi-forgejo-setup-"));
+  const root = await mkdtemp(join(tmpdir(), "omp-forgejo-setup-"));
   temporaryRoots.push(root);
   return root;
 }
@@ -79,7 +79,7 @@ afterEach(async () => {
 });
 
 describe("guided Forgejo setup", () => {
-  it("guides API-token setup, validates input, and writes custom dashboard choices without a token", async () => {
+  it("guides API-token setup, validates input, and writes tool choices without a token", async () => {
     const root = await temporaryRoot();
     const target = join(root, "forgejo.json");
     const scripted = scriptedUi([
@@ -93,16 +93,7 @@ describe("guided Forgejo setup", () => {
       { kind: "input", value: "" },
       { kind: "select", match: "Keep 'FORGEJO_ACME_TOKEN'" },
       { kind: "select", match: "detected server hostname only" },
-      { kind: "select", match: "Continue to dashboard" },
-      { kind: "select", match: "Custom" },
-      { kind: "select", match: "widget hidden" },
-      { kind: "select", match: "current repository" },
-      { kind: "select", match: "All attention" },
-      { kind: "select", match: "Counts only" },
-      { kind: "select", match: "Custom value" },
-      { kind: "input", value: "42" },
-      { kind: "select", match: "Custom value" },
-      { kind: "input", value: "7" },
+      { kind: "select", match: "Continue to tool" },
       { kind: "select", match: "Lite" },
       { kind: "select", match: "Write configuration" },
     ]);
@@ -114,7 +105,7 @@ describe("guided Forgejo setup", () => {
       cwd: root,
       ui: scripted.ui,
       exec,
-      environment: { PI_FORGEJO_CONFIG: target },
+      environment: { OMP_FORGEJO_CONFIG: target },
       onStage: (stage) => stages.push(stage),
     });
 
@@ -125,14 +116,6 @@ describe("guided Forgejo setup", () => {
       credentialProvider: "env",
       tokenEnv: "FORGEJO_ACME_TOKEN",
       remoteHosts: ["git.acme.example"],
-    });
-    expect(result?.config.dashboard).toEqual({
-      enabled: false,
-      scope: "current",
-      refreshSeconds: 42,
-      previewLimit: 7,
-      notifications: "all",
-      privacy: "counts-only",
     });
     expect(result?.config.tools).toEqual({ mode: "lite" });
     const written = await readFile(target, "utf8");
@@ -146,13 +129,7 @@ describe("guided Forgejo setup", () => {
     expect(scripted.notify.mock.calls.flat().join(" ")).toContain(
       "Environment variable must begin",
     );
-    expect(stages).toEqual([
-      "scope",
-      "servers",
-      "dashboard",
-      "tools",
-      "review",
-    ]);
+    expect(stages).toEqual(["scope", "servers", "tools", "review"]);
     scripted.assertComplete();
   });
 
@@ -167,8 +144,7 @@ describe("guided Forgejo setup", () => {
       { kind: "select", match: "Add this Forgejo server" },
       { kind: "input", value: "" },
       { kind: "select", match: "detected server hostname only" },
-      { kind: "select", match: "Continue to dashboard" },
-      { kind: "select", match: "On demand" },
+      { kind: "select", match: "Continue to tool" },
       { kind: "select", match: "Full" },
       { kind: "select", match: "Write configuration" },
     ]);
@@ -187,7 +163,7 @@ describe("guided Forgejo setup", () => {
       environment: {},
     });
 
-    const target = join(root, ".pi", "forgejo.json");
+    const target = join(root, ".omp", "forgejo.json");
     expect(result).toMatchObject({ scope: "project", target });
     expect(result?.config.servers).toMatchObject({
       work: { hostname: "git.acme.example", credentialProvider: "fgj" },
@@ -195,10 +171,6 @@ describe("guided Forgejo setup", () => {
         hostname: "code.community.example",
         credentialProvider: "fgj",
       },
-    });
-    expect(result?.config.dashboard).toMatchObject({
-      enabled: false,
-      notifications: "off",
     });
     expect(exec).toHaveBeenCalledWith("fgj", ["auth", "status"], {
       cwd: root,
@@ -218,8 +190,7 @@ describe("guided Forgejo setup", () => {
       { kind: "select", match: "Add this Forgejo server" },
       { kind: "input", value: "work" },
       { kind: "select", match: "detected server hostname only" },
-      { kind: "select", match: "Continue to dashboard" },
-      { kind: "select", match: "On demand" },
+      { kind: "select", match: "Continue to tool" },
       { kind: "select", match: "Full" },
       { kind: "select", match: "Change tool activation" },
       { kind: "select", match: "Lite" },
@@ -246,7 +217,6 @@ describe("guided Forgejo setup", () => {
     expect(stages).toEqual([
       "scope",
       "servers",
-      "dashboard",
       "tools",
       "review",
       "tools",
@@ -255,7 +225,7 @@ describe("guided Forgejo setup", () => {
     scripted.assertComplete();
   });
 
-  it("reconfigures an existing server while preserving dashboard settings and normalizing permissions", async () => {
+  it("reconfigures an existing server while preserving allowed mutations and normalizing permissions", async () => {
     const root = await temporaryRoot();
     const target = join(root, "forgejo.json");
     const existing = {
@@ -285,8 +255,7 @@ describe("guided Forgejo setup", () => {
       { kind: "input", value: "" },
       { kind: "input", value: "FORGEJO_WORK_TOKEN_V2" },
       { kind: "select", match: "Keep current SSH aliases" },
-      { kind: "select", match: "Continue to dashboard" },
-      { kind: "select", match: "Keep current settings" },
+      { kind: "select", match: "Continue to tool" },
       { kind: "select", match: "Keep current" },
       { kind: "select", match: "Write configuration" },
     ]);
@@ -297,17 +266,16 @@ describe("guided Forgejo setup", () => {
       ui: scripted.ui,
       exec: vi.fn<CommandExecutor>(),
       environment: {
-        PI_FORGEJO_CONFIG: target,
+        OMP_FORGEJO_CONFIG: target,
         FORGEJO_WORK_TOKEN_V2: "new-token-value",
       },
     });
 
-    expect(result?.config.dashboard).toEqual(existing.dashboard);
     expect(result?.config.tools).toEqual({ mode: "full" });
     expect(result?.config.allowedMutations).toEqual(existing.allowedMutations);
-    expect(JSON.parse(await readFile(target, "utf8")).allowedMutations).toEqual(
-      existing.allowedMutations,
-    );
+    const rewritten = JSON.parse(await readFile(target, "utf8"));
+    expect(rewritten.dashboard).toEqual(existing.dashboard);
+    expect(rewritten.allowedMutations).toEqual(existing.allowedMutations);
     expect(result?.config.servers.work?.tokenEnv).toBe("FORGEJO_WORK_TOKEN_V2");
     expect(result?.config.servers.work?.remoteHosts).toEqual([
       "git.work.example",
@@ -348,7 +316,7 @@ describe("guided Forgejo setup", () => {
         cwd: root,
         ui: scripted.ui,
         exec: vi.fn<CommandExecutor>(),
-        environment: { PI_FORGEJO_CONFIG: target },
+        environment: { OMP_FORGEJO_CONFIG: target },
       }),
     ).resolves.toBeUndefined();
     await expect(stat(target)).rejects.toMatchObject({ code: "ENOENT" });

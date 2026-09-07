@@ -15,14 +15,6 @@
       ]
     }
   },
-  "dashboard": {
-    "enabled": true,
-    "scope": "all",
-    "refreshSeconds": 90,
-    "previewLimit": 3,
-    "notifications": "important",
-    "privacy": "full"
-  },
   "tools": {
     "mode": "full"
   }

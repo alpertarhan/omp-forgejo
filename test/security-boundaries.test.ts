@@ -10,7 +10,7 @@ import { createRuntime } from "../src/runtime.js";
 const temporaryDirectories: string[] = [];
 
 async function temporaryDirectory(): Promise<string> {
-	const path = await mkdtemp(join(tmpdir(), "pi-forgejo-security-"));
+	const path = await mkdtemp(join(tmpdir(), "omp-forgejo-security-"));
 	temporaryDirectories.push(path);
 	return path;
 }
@@ -38,7 +38,7 @@ describe("project trust boundaries", () => {
 				work: { baseUrl: "https://forgejo.example", tokenEnv: "FORGEJO_TOKEN" },
 			},
 		});
-		await writeJson(join(project, ".pi", "forgejo.json"), {
+		await writeJson(join(project, ".omp", "forgejo.json"), {
 			servers: {
 				attacker: {
 					baseUrl: "https://attacker.example",
@@ -47,7 +47,7 @@ describe("project trust boundaries", () => {
 			},
 		});
 		const environment = {
-			PI_FORGEJO_CONFIG: globalConfig,
+			OMP_FORGEJO_CONFIG: globalConfig,
 			FORGEJO_TOKEN: "forgejo-token",
 			OPENAI_API_KEY: "must-not-leave-the-process",
 		};
@@ -98,7 +98,7 @@ describe("project trust boundaries", () => {
 		await writeJson(globalConfig, {
 			allowedMutations: ["comment.issue.delete"],
 		});
-		await writeJson(join(project, ".pi", "forgejo.json"), {
+		await writeJson(join(project, ".omp", "forgejo.json"), {
 			servers: {
 				work: {
 					baseUrl: "https://forgejo.example",
@@ -109,7 +109,7 @@ describe("project trust boundaries", () => {
 
 		const config = await loadConfig(
 			project,
-			{ PI_FORGEJO_CONFIG: globalConfig },
+			{ OMP_FORGEJO_CONFIG: globalConfig },
 			{ projectTrusted: true },
 		);
 
@@ -130,7 +130,7 @@ describe("project trust boundaries", () => {
 				},
 			},
 		});
-		await writeJson(join(project, ".pi", "forgejo.json"), {
+		await writeJson(join(project, ".omp", "forgejo.json"), {
 			servers: {
 				community: {
 					baseUrl: "https://code.example.org",
@@ -142,12 +142,12 @@ describe("project trust boundaries", () => {
 
 		const config = await loadConfig(
 			project,
-			{ PI_FORGEJO_CONFIG: globalConfig },
+			{ OMP_FORGEJO_CONFIG: globalConfig },
 			{ projectTrusted: true },
 		);
 		expect(config.servers.work?.fgjConfig).toBe(join(root, "global", "fgj.yaml"));
 		expect(config.servers.community?.fgjConfig).toBe(
-			join(project, ".pi", "project-fgj.yaml"),
+			join(project, ".omp", "project-fgj.yaml"),
 		);
 	});
 
@@ -164,7 +164,7 @@ describe("project trust boundaries", () => {
 				},
 			},
 		});
-		await writeJson(join(project, ".pi", "forgejo.json"), {
+		await writeJson(join(project, ".omp", "forgejo.json"), {
 			servers: {
 				work: { baseUrl: "https://forgejo.example/internal" },
 			},
@@ -172,7 +172,7 @@ describe("project trust boundaries", () => {
 
 		const config = await loadConfig(
 			project,
-			{ PI_FORGEJO_CONFIG: globalConfig },
+			{ OMP_FORGEJO_CONFIG: globalConfig },
 			{ projectTrusted: true },
 		);
 		expect(config.servers.work?.fgjConfig).toBe(

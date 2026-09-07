@@ -1,0 +1,138 @@
+<!doctype html>
+<html>
+
+<head>
+  <meta charset="utf-8" />
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 1536px;
+      height: 420px;
+      overflow: hidden;
+    }
+
+    body {
+      position: relative;
+      font-family: -apple-system, "SF Pro Display", "Segoe UI", Helvetica, Arial, sans-serif;
+      background: #0b0f16;
+    }
+
+    .art {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: center 58%;
+    }
+
+    .scrim {
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(90deg, rgba(11, 15, 22, 0.92) 0%, rgba(11, 15, 22, 0.80) 38%, rgba(11, 15, 22, 0.30) 68%, rgba(11, 15, 22, 0) 86%),
+        linear-gradient(0deg, rgba(11, 15, 22, 0.35) 0%, rgba(11, 15, 22, 0) 26%);
+    }
+
+    .content {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      padding: 0 72px 0 64px;
+      gap: 40px;
+    }
+
+    .icon {
+      flex: 0 0 auto;
+      width: 138px;
+      height: 138px;
+      border-radius: 34px;
+      background: linear-gradient(135deg, #fdba74, #f97316);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 18px 50px rgba(249, 115, 22, 0.38), 0 0 0 1px rgba(253, 186, 116, 0.35) inset;
+    }
+
+    .icon svg {
+      width: 96px;
+      height: 96px;
+      fill: #0b0f16;
+    }
+
+    .block {
+      min-width: 0;
+    }
+
+    h1 {
+      font-size: 76px;
+      font-weight: 800;
+      letter-spacing: -2.5px;
+      color: #f8fafc;
+      line-height: 1.02;
+      text-shadow: 0 4px 26px rgba(0, 0, 0, 0.65);
+      white-space: nowrap;
+    }
+
+    .sub {
+      margin-top: 14px;
+      font-size: 27px;
+      font-weight: 500;
+      color: #b6c3d3;
+      text-shadow: 0 2px 14px rgba(0, 0, 0, 0.7);
+      white-space: nowrap;
+    }
+
+    .chips {
+      display: flex;
+      gap: 16px;
+      margin-top: 26px;
+    }
+
+    .chip {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 19px;
+      padding: 9px 20px;
+      border-radius: 12px;
+      background: rgba(15, 23, 42, 0.82);
+      border: 1px solid #3b4a5f;
+      color: #fdba74;
+      white-space: nowrap;
+      backdrop-filter: blur(3px);
+    }
+
+    .chip.blue {
+      color: #7dd3fc;
+    }
+  </style>
+</head>
+
+<body>
+  <img class="art" src="banner-art.webp" />
+  <div class="scrim"></div>
+  <div class="content">
+    <div class="icon">
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <path
+          d="M11.75 2.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.25.75a2.25 2.25 0 113 2.122V6A2.5 2.5 0 0110 8.5H8a1 1 0 00-1 1v1.128a2.251 2.251 0 11-1.5 0V5.372a2.25 2.25 0 111.5 0v1.836A2.492 2.492 0 018 6h2a1 1 0 001-1v-.878A2.25 2.25 0 019.5 3.25zM4.25 12a.75.75 0 100 1.5.75.75 0 000-1.5zM3.5 3.25a.75.75 0 111.5 0 .75.75 0 01-1.5 0z" />
+      </svg>
+    </div>
+    <div class="block">
+      <h1>omp-forgejo</h1>
+      <div class="sub">Multi-server Forgejo workflows for omp</div>
+      <div class="chips">
+        <span class="chip">work:platform/api!45</span>
+        <span class="chip blue">community:tools/runner#123</span>
+      </div>
+    </div>
+  </div>
+</body>
+
+</html>

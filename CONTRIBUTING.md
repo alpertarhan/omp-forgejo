@@ -1,6 +1,6 @@
 # Contributing
 
-Contributions to `pi-forgejo-toolkit` are welcome. Focused bug fixes, Forgejo compatibility improvements, tests, documentation, and workflow refinements are especially useful.
+Contributions to `omp-forgejo` are welcome. Focused bug fixes, Forgejo compatibility improvements, tests, documentation, and workflow refinements are especially useful.
 
 ## Before you start
 
@@ -16,25 +16,25 @@ For a substantial behavior or API change, open a proposal issue first. This avoi
 Requirements:
 
 - [Bun](https://bun.sh/) 1.3.14 or newer
-- Node.js 22.19 or newer, because Pi runs extensions in its Node.js environment
-- A current [Pi](https://pi.dev/) installation
+- A current [omp](https://github.com/oh-my-pi/omp) installation (omp runs extensions in its Bun runtime)
 - Optional: [`fgj`](https://codeberg.org/forgejo-contrib/forgejo-cli) and a disposable Forgejo test instance for integration work
 
 ```bash
-git clone https://github.com/alpertarhan/pi-forgejo-toolkit.git
-cd pi-forgejo-toolkit
+git clone https://github.com/alpertarhan/omp-forgejo.git
+cd omp-forgejo
 bun install --frozen-lockfile
 bun run check
 ```
 
-Load the working tree directly in Pi while developing:
+Load the working tree directly in omp while developing:
 
 ```bash
-PI_FORGEJO_CONFIG=/path/to/forgejo.json \
-  pi --no-extensions --no-skills \
-  -e ./extensions/forgejo/index.ts \
-  --skill ./skills
+OMP_FORGEJO_CONFIG=/path/to/forgejo.json \
+  omp --no-extensions \
+  -e ./extensions/forgejo/index.ts
 ```
+
+Loading the extension through `-e` also discovers the bundled `skills/` directory next to the package.
 
 Use only test accounts and repositories for mutation smoke tests.
 

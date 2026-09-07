@@ -1,5 +1,4 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { StringEnum } from "@earendil-works/pi-ai";
+import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import { Type } from "typebox";
 import { apiPath } from "../client.js";
 import { formatResourceRef } from "../refs.js";
@@ -50,7 +49,7 @@ export function registerReviewTool(
     description:
       "Read reviews/comments or draft, preview, and submit a review. Submit requires confirmation.",
     parameters: Type.Object({
-      action: StringEnum([
+      action: Type.Enum([
         "list",
         "get",
         "get_comments",
@@ -63,7 +62,7 @@ export function registerReviewTool(
       ...resourceTargetProperties,
       review_id: Type.Optional(Type.Integer({ minimum: 1 })),
       verdict: Type.Optional(
-        StringEnum(["COMMENT", "APPROVED", "REQUEST_CHANGES"] as const),
+        Type.Enum(["COMMENT", "APPROVED", "REQUEST_CHANGES"] as const),
       ),
       body: Type.Optional(Type.String()),
       replace: Type.Optional(Type.Boolean()),
@@ -273,7 +272,6 @@ export function registerReviewTool(
         );
       }
       runtime.drafts.delete(key);
-      await runtime.dashboard.refreshIfObserved(signal);
       return toolResult(
         `Submitted ${draft.verdict} review for ${reference}`,
         response.data,

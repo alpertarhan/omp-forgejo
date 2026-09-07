@@ -13,23 +13,10 @@ export interface ForgejoServerConfig {
   remoteHosts: string[];
 }
 
-export type DashboardScope = "all" | "current";
-export type NotificationLevel = "off" | "important" | "all";
-export type PrivacyMode = "full" | "counts-only";
 export type ToolMode = "full" | "lite";
-
-export interface DashboardConfig {
-  enabled: boolean;
-  scope: DashboardScope;
-  refreshSeconds: number;
-  previewLimit: number;
-  notifications: NotificationLevel;
-  privacy: PrivacyMode;
-}
 
 export interface ForgejoConfig {
   servers: Record<ServerAlias, ForgejoServerConfig>;
-  dashboard: DashboardConfig;
   /** Tool activation style; lite swaps domains instead of accumulating them. */
   tools: ToolsConfig;
   /** Stable mutation keys approved for automatic execution (global config only). */
@@ -450,12 +437,7 @@ export interface ApiResult<T> {
 }
 
 export type ServerHealth = "loading" | "ready" | "auth-error" | "error";
-export type DashboardItemKind =
-  | "assigned"
-  | "authored-pull"
-  | "review"
-  | "notification"
-  | "ci-failed";
+export type DashboardItemKind = "review" | "notification";
 
 export interface DashboardItem {
   key: string;
@@ -470,44 +452,6 @@ export interface DashboardItem {
   webUrl: string;
   unread?: boolean;
   sourceId?: number;
-}
-
-export interface DashboardCollection {
-  total: number;
-  items: DashboardItem[];
-}
-
-export interface ServerDashboard {
-  alias: ServerAlias;
-  health: ServerHealth;
-  fetchedAt?: string;
-  error?: string;
-  identity?: ForgejoUser;
-  assignedIssues: DashboardCollection;
-  authoredPulls: DashboardCollection;
-  reviewRequests: DashboardCollection;
-  notifications: DashboardCollection;
-  failedRuns: DashboardCollection;
-  actionsError?: string;
-}
-
-export interface DashboardTotals {
-  assignedIssues: number;
-  authoredPulls: number;
-  reviewRequests: number;
-  notifications: number;
-  failedRuns: number;
-}
-
-export interface DashboardSnapshot {
-  fetchedAt?: string;
-  backgroundError?: string;
-  activeRepo?: RepoRef;
-  scope?: DashboardScope;
-  servers: Record<ServerAlias, ServerDashboard>;
-  totals: DashboardTotals;
-  attention: DashboardItem[];
-  refreshing: boolean;
 }
 
 export type ForgejoFeatureAvailability =

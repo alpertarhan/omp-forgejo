@@ -1,6 +1,6 @@
 import { listActionRuns } from "./actions.js";
 import { apiPath, ForgejoError, type ForgejoClient } from "./client.js";
-import { queryAttentionItems, type AttentionTarget } from "./dashboard/query.js";
+import { queryAttentionItems, type AttentionTarget } from "./attention.js";
 import { formatResourceRef } from "./refs.js";
 import { WatchScheduler } from "./watch-scheduler.js";
 import type { WatchErrorMetadata } from "./watch.js";

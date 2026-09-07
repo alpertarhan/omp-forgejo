@@ -3,8 +3,7 @@ import { ForgejoClient, ForgejoClientPool } from "./client.js";
 import { configPaths, loadConfig } from "./config.js";
 import { createCredentialProvider } from "./credentials.js";
 import type { MutationApprovalKey } from "./mutation-approvals.js";
-import { DashboardStore } from "./dashboard/store.js";
-import { parseResourceRef } from "./refs.js";
+import { parseRepoRef, parseResourceRef, REF_FORMAT_HINT } from "./refs.js";
 import { resolveRepository } from "./remote-resolver.js";
 import type { CommandExecutor } from "./process.js";
 import type {
@@ -14,9 +13,6 @@ import type {
   ResourceRef,
   ReviewDraft,
 } from "./types.js";
-
-const REF_FORMAT_HINT =
-	"expected 'server:owner/repo#N' (issue), 'server:owner/repo!N' (pull), 'server:owner/repo' (repo), or 'fj://server/owner/repo/<issue|pull>/<N>'; for git tags/branches use the git_ref parameter";
 
 export interface RepoInput {
   ref?: string;
@@ -51,7 +47,6 @@ export class ForgejoRuntime {
     readonly config: ForgejoConfig,
     readonly clients: ForgejoClientPool,
     readonly capabilities: CapabilityRegistry,
-    readonly dashboard: DashboardStore,
     readonly repoResolution: RepoResolution,
     readonly globalConfigPath: string = configPaths(cwd, process.env).global,
   ) {
@@ -91,7 +86,6 @@ export class ForgejoRuntime {
       }
     }
     this.selectedRepo = repo;
-    this.dashboard.setActiveRepo(repo);
     return repo;
   }
 
@@ -103,14 +97,14 @@ export class ForgejoRuntime {
       throw new Error("ref cannot be combined with server, owner, or repo");
     }
     if (input.ref) {
-      const resource = parseResourceRef(input.ref);
-      if (!resource)
+      const parsed = parseResourceRef(input.ref) ?? parseRepoRef(input.ref);
+      if (!parsed)
         throw new Error(`invalid Forgejo reference '${input.ref}' — ${REF_FORMAT_HINT}`);
-      this.clients.get(resource.server);
+      this.clients.get(parsed.server);
       return {
-        server: resource.server,
-        owner: resource.owner,
-        repo: resource.repo,
+        server: parsed.server,
+        owner: parsed.owner,
+        repo: parsed.repo,
       };
     }
     if (explicit.length > 0 && explicit.length < 3) {
@@ -142,7 +136,10 @@ export class ForgejoRuntime {
     if (input.ref) {
       const resource = parseResourceRef(input.ref);
       if (!resource)
-        throw new Error(`invalid Forgejo reference '${input.ref}' — ${REF_FORMAT_HINT}`);
+        throw new Error(
+          `invalid Forgejo reference '${input.ref}' — ${REF_FORMAT_HINT}` +
+          " (this action targets a single issue or pull request, so the #N or !N index is required)",
+        );
       if (resource.kind !== kind)
         throw new Error(`reference '${input.ref}' is not a ${kind}`);
       this.clients.get(resource.server);
@@ -175,7 +172,6 @@ export class ForgejoRuntime {
   }
 
   close(): void {
-    this.dashboard.close();
     this.capabilities.close();
     this.clients.clearCredentials();
     this.drafts.clear();
@@ -212,26 +208,15 @@ export async function createRuntime(
   const resolution: RepoResolution = projectTrusted
     ? await resolveRepository(exec, cwd, config)
     : {
-        status: "none",
-        reason:
-          "project-local Forgejo discovery is disabled until the project is trusted",
-      };
-  const activeRepo =
-    resolution.status === "resolved" ? resolution.repo : undefined;
-  const dashboard = new DashboardStore(
-    clients,
-    config.dashboard.previewLimit,
-    activeRepo,
-    (alias) => capabilities.get(alias)?.user,
-    (alias) => capabilities.get(alias)?.features.actionsRuns ?? "unknown",
-  );
-  dashboard.setScope(config.dashboard.scope);
+      status: "none",
+      reason:
+        "project-local Forgejo discovery is disabled until the project is trusted",
+    };
   return new ForgejoRuntime(
     cwd,
     config,
     clients,
     capabilities,
-    dashboard,
     resolution,
     configPaths(cwd, environment).global,
   );

@@ -3,7 +3,10 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "lib": ["ES2022", "DOM"],
+    "lib": [
+      "ES2022",
+      "DOM"
+    ],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
@@ -12,7 +15,17 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "verbatimModuleSyntax": true,
+    "paths": {
+      "typebox": [
+        "./node_modules/@oh-my-pi/omptype/dist/types/typebox.d.ts"
+      ]
+    },
     "skipLibCheck": true
   },
-  "include": ["extensions/**/*.ts", "scripts/**/*.ts", "src/**/*.ts", "test/**/*.ts"]
+  "include": [
+    "extensions/**/*.ts",
+    "scripts/**/*.ts",
+    "src/**/*.ts",
+    "test/**/*.ts"
+  ]
 }
