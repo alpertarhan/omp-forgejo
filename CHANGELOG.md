@@ -6,10 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-09-07
+
 ### Changed
 
 - The dashboard widget and its footer status are now off by default (`dashboard.enabled: false`): a repository still activates the tools and skills, but nothing is drawn on screen until the dashboard is enabled explicitly. Watch notifications keep following `dashboard.notifications` independently.
-- Host-adaptive config locations: under omp the active agent directory (`~/.omp/agent`) and project `.omp/` directory are preferred, with a legacy fallback so an existing `~/.pi/agent/forgejo.json` or `<cwd>/.pi/forgejo.json` keeps working unchanged; pi paths are untouched.
+- Host-adaptive config locations: under omp the active agent directory (`~/.omp/agent`) and project `.omp/` directory are preferred, with a legacy fallback so an existing `~/.pi/agent/forgejo.json` or `<cwd>/.pi/forgejo.json` keeps working unchanged; pi paths are untouched. The host is resolved from the environment (`PI_CODING_AGENT`, `PI_CODING_AGENT_DIR`, `OMP_PROFILE`) so build graphs stay free of pi-coding-agent imports.
 
 ## [0.9.0] - 2026-09-07
 
@@ -189,7 +191,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `forgejo-issue-to-pr` and `forgejo-pr-review` workflow skills.
 - Environment-variable and `fgj` credential providers with redirect and secret-redaction protections.
 
-[Unreleased]: https://github.com/alpertarhan/pi-forgejo-toolkit/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/alpertarhan/pi-forgejo-toolkit/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/alpertarhan/pi-forgejo-toolkit/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/alpertarhan/pi-forgejo-toolkit/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/alpertarhan/pi-forgejo-toolkit/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/alpertarhan/pi-forgejo-toolkit/compare/v0.6.1...v0.7.0
