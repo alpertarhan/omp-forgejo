@@ -27,7 +27,7 @@ describe("Forgejo configuration", () => {
 			remoteHosts: ["forgejo.work.example", "forgejo-work"],
 		});
 		expect(config.dashboard).toEqual({
-			enabled: true,
+			enabled: false,
 			scope: "all",
 			refreshSeconds: 90,
 			previewLimit: 3,

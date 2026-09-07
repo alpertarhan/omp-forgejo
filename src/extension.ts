@@ -1,9 +1,12 @@
+import { homedir } from "node:os";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
 	ExtensionAPI,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteProvider } from "@earendil-works/pi-tui";
+import { setConfigHostContext } from "./config.js";
 import { runForgejoSetup, type SetupStage } from "./setup.js";
 import { createForgejoAutocompleteProvider } from "./dashboard/autocomplete.js";
 import { DashboardNotifier } from "./dashboard/notifier.js";
@@ -462,6 +465,23 @@ export default function forgejoExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
+		// Host-adaptive config location: pi sets PI_CODING_AGENT=true for
+		// extensions, omp does not. Resolved from the environment (never a
+		// pi-coding-agent import, which would pull optional dependencies into
+		// build graphs). PI_CODING_AGENT_DIR relocates the agent dir on both
+		// hosts; omp profiles live under ~/.omp/profiles/<name>/agent.
+		const isPi = process.env.PI_CODING_AGENT === "true";
+		const profile = process.env.OMP_PROFILE?.trim();
+		setConfigHostContext({
+			isOmp: !isPi,
+			agentDir:
+				process.env.PI_CODING_AGENT_DIR?.trim() ||
+				(isPi
+					? resolve(homedir(), ".pi", "agent")
+					: profile
+						? resolve(homedir(), ".omp", "profiles", profile, "agent")
+						: resolve(homedir(), ".omp", "agent")),
+		});
 		forgejoTools.reset();
 		forgejoActive = false;
 		cleanup();
