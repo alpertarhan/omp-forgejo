@@ -1,3 +1,5 @@
+import { homedir } from "node:os";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
 	ExtensionAPI,
@@ -463,23 +465,23 @@ export default function forgejoExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
-		// Host-adaptive config location: resolve the running host (pi vs omp)
-		// before any config read so omp sessions follow ~/.omp/agent while
-		// legacy .pi configs keep working. Done here so config.ts itself stays
-		// free of pi-coding-agent imports (optional deps in the test graph).
-		try {
-			const hostModule = (await import(
-				"@earendil-works/pi-coding-agent"
-			)) as unknown as Record<string, unknown>;
-			const getAgentDir = hostModule.getAgentDir as (() => string) | undefined;
-			setConfigHostContext({
-				isOmp: "StatusLineComponent" in hostModule,
-				agentDir:
-					typeof getAgentDir === "function" ? getAgentDir() : undefined,
-			});
-		} catch {
-			setConfigHostContext(undefined);
-		}
+		// Host-adaptive config location: pi sets PI_CODING_AGENT=true for
+		// extensions, omp does not. Resolved from the environment (never a
+		// pi-coding-agent import, which would pull optional dependencies into
+		// build graphs). PI_CODING_AGENT_DIR relocates the agent dir on both
+		// hosts; omp profiles live under ~/.omp/profiles/<name>/agent.
+		const isPi = process.env.PI_CODING_AGENT === "true";
+		const profile = process.env.OMP_PROFILE?.trim();
+		setConfigHostContext({
+			isOmp: !isPi,
+			agentDir:
+				process.env.PI_CODING_AGENT_DIR?.trim() ||
+				(isPi
+					? resolve(homedir(), ".pi", "agent")
+					: profile
+						? resolve(homedir(), ".omp", "profiles", profile, "agent")
+						: resolve(homedir(), ".omp", "agent")),
+		});
 		forgejoTools.reset();
 		forgejoActive = false;
 		cleanup();
