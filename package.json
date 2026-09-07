@@ -47,7 +47,12 @@
   },
   "pi": {
     "extensions": [
-      "./extensions"
+      "./extensions/forgejo/index.ts"
+    ]
+  },
+  "omp": {
+    "extensions": [
+      "./extensions/forgejo/index.ts"
     ]
   },
   "peerDependencies": {
