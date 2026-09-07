@@ -15,6 +15,9 @@ import type {
   ReviewDraft,
 } from "./types.js";
 
+const REF_FORMAT_HINT =
+	"expected 'server:owner/repo#N' (issue), 'server:owner/repo!N' (pull), 'server:owner/repo' (repo), or 'fj://server/owner/repo/<issue|pull>/<N>'; for git tags/branches use the git_ref parameter";
+
 export interface RepoInput {
   ref?: string;
   server?: string;
@@ -102,7 +105,7 @@ export class ForgejoRuntime {
     if (input.ref) {
       const resource = parseResourceRef(input.ref);
       if (!resource)
-        throw new Error(`invalid Forgejo reference '${input.ref}'`);
+        throw new Error(`invalid Forgejo reference '${input.ref}' — ${REF_FORMAT_HINT}`);
       this.clients.get(resource.server);
       return {
         server: resource.server,
@@ -139,7 +142,7 @@ export class ForgejoRuntime {
     if (input.ref) {
       const resource = parseResourceRef(input.ref);
       if (!resource)
-        throw new Error(`invalid Forgejo reference '${input.ref}'`);
+        throw new Error(`invalid Forgejo reference '${input.ref}' — ${REF_FORMAT_HINT}`);
       if (resource.kind !== kind)
         throw new Error(`reference '${input.ref}' is not a ${kind}`);
       this.clients.get(resource.server);

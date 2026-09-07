@@ -396,7 +396,7 @@ export default function forgejoExtension(pi: ExtensionAPI): void {
 			const value = args.trim();
 			if (value) {
 				const ref = parseResourceRef(value);
-				if (!ref) throw new Error(`invalid Forgejo reference '${value}'`);
+				if (!ref) throw new Error(`invalid Forgejo reference '${value}' — expected 'server:owner/repo#N' (issue), 'server:owner/repo!N' (pull), 'server:owner/repo' (repo), or 'fj://server/owner/repo/<issue|pull>/<N>'; for git tags/branches use the git_ref parameter`);
 				const server = current.config.servers[ref.server];
 				if (!server) throw new Error(`unknown server '${ref.server}'`);
 				await openExternal(pi, resourceWebUrl(ref, server), server.baseUrl);
